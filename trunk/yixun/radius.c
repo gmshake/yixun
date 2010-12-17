@@ -172,23 +172,6 @@ int log_in()
         log_perror("[log_in] socket");
         goto ERROR;
     }
-    /*
-    struct timeval tv;
-    tv.tv_sec = CONNECTION_TIME_OUT;
-    tv.tv_usec = 0;
-    if (setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) < 0)
-    {
-        log_perror("[log_in] setsockopt");
-        goto ERROR;
-    }
-    tv.tv_sec = CONNECTION_TIME_OUT;
-    tv.tv_usec = 0;
-    if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
-    {
-        log_perror("[log_in] setsockopt");
-        goto ERROR;
-    }
-    */
     
     struct timeval tv;
     tv.tv_sec = CONNECTION_TIME_OUT;
@@ -229,7 +212,21 @@ int log_in()
 		
 		settingChanged = 0;
     }
-		
+    
+
+    tv.tv_sec = SND_RCV_TIME_OUT;
+    tv.tv_usec = 0;
+    if (setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) < 0) {
+        log_perror("[log_in] setsockopt");
+        goto ERROR;
+    }
+    tv.tv_sec = SND_RCV_TIME_OUT;
+    tv.tv_usec = 0;
+    if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
+        log_perror("[log_in] setsockopt");
+        goto ERROR;
+    }
+
     int ret = send(sockfd, s_buff, len, 0);
 
     if (ret < 0)
@@ -302,6 +299,19 @@ int send_keep_alive()
 		free_rds_packet(packet);
 	}
 	
+    tv.tv_sec = SND_RCV_TIME_OUT;
+    tv.tv_usec = 0;
+    if (setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) < 0) {
+        log_perror("[log_in] setsockopt");
+        goto ERROR;
+    }
+    tv.tv_sec = SND_RCV_TIME_OUT;
+    tv.tv_usec = 0;
+    if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
+        log_perror("[log_in] setsockopt");
+        goto ERROR;
+    }
+    
     if (send(sockfd, s_buff, sizeof(s_buff), 0) < 0) // Hack:发送包是固定的512字节
     {
         log_perror("[send_keep_alive] send");
@@ -353,6 +363,19 @@ int log_out()
 		free_rds_packet(packet);
 	}
 	
+    tv.tv_sec = SND_RCV_TIME_OUT;
+    tv.tv_usec = 0;
+    if (setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) < 0) {
+        log_perror("[log_in] setsockopt");
+        goto ERROR;
+    }
+    tv.tv_sec = SND_RCV_TIME_OUT;
+    tv.tv_usec = 0;
+    if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
+        log_perror("[log_in] setsockopt");
+        goto ERROR;
+    }
+    
     if (send(sockfd, s_buff, sizeof(s_buff), 0) < 0) // Hack:发送包是固定的512字节
     {
         log_perror("[log_out] send");
