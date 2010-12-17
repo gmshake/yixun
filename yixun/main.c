@@ -15,10 +15,11 @@
 
 #define LOCKFILE "/var/tmp/yixun.pid"        /* 锁文件 */
 static int lockfd; // lockfile file description
-static int daemon_flag = 0;
-static int tun_gre_flag = 1;
-static int verbose_flag = 0;
-static int quit_flag = 0;
+static int flag_changeroute = 0;
+static int flag_daemon      = 0;
+static int flag_test        = 0;
+static int flag_verbose     = 0;
+static int flag_quit        = 0;
 static char *progname;
 
 static int log_opened = 0;
@@ -41,14 +42,15 @@ int quit_daemon();
 int set_gre_if_tunnel();
 int remove_gre_if_tunnel();
 int lock_file(const char *lockfile); // On error, return -1;
-void clean_up();
+void cleanup();
+void cleanup_exit(int i);
 
 int main (int argc, char * const argv[])
 {
     parse_args(argc, argv); //process args
-    atexit(clean_up);
+    //atexit(clean_up);
     
-    if (daemon_flag && !verbose_flag)
+    if (flag_daemon && !flag_verbose)
     {
         openlog(progname, LOG_PID | LOG_CONS, LOG_USER);
         log_opened = 1;
@@ -61,7 +63,7 @@ int main (int argc, char * const argv[])
     else
         set_log_type(LCONSOLE);
     
-    if (quit_flag)
+    if (flag_quit)
         return quit_daemon();
 
     if (conf_file != NULL)
@@ -73,38 +75,7 @@ int main (int argc, char * const argv[])
         return -1;
     }
     
-    int retry_count = 2;
-    do
-    {
-        int rval = log_in();
-
-        if (rval == 0)
-            break;
-        else if (rval > 0) // Username or password error, do not retry
-            return -2;
-
-        sleep(1);
-    }while(--retry_count >= 0);
-    
-    if (retry_count < 0)
-    {
-        log_err("[main] when log in\n");
-        return -3;
-    }
-    
-    connected = 1;
-    
-    if (tun_gre_flag)
-    {
-        if (set_gre_if_tunnel() < 0)
-        {
-            log_perror("[main] start tun-gre");
-            return -4;
-        }
-        flag_gre_if_isset = 1;
-    }
-    
-    if (daemon_flag)
+    if (flag_daemon)
     {
         if (daemon(0, 0) < 0)
         {
@@ -122,14 +93,43 @@ int main (int argc, char * const argv[])
 #endif
         }
         set_log_type(LDAEMON);
-
+        
         if ((lockfd = lock_file(LOCKFILE)) < 0) // unable to lock
         {
             log_err("[main] unable to lock file:%s\n", LOCKFILE);
-            return -6;
+            goto ERROR;
         }
     }
     
+    int retry_count = 2;
+    do
+    {
+        int rval = log_in();
+        if (rval == 0)
+            break;
+        else if (rval > 0) // Username or password error, do not retry
+            goto ERROR;
+        sleep(1);
+    }while(--retry_count > 0);
+    
+    if (retry_count <= 0)
+    {
+        log_err("[main] when log in\n");
+        goto ERROR;
+    }
+    
+    connected = 1;
+    
+    if (!flag_test)
+    {
+        if (set_gre_if_tunnel() < 0)
+        {
+            log_perror("[main] set gre interface");
+            goto ERROR;
+        }
+        flag_gre_if_isset = 1;
+    }
+
     signal(SIGINT,  process_signals);
     signal(SIGTERM, process_signals);
     signal(SIGHUP,  process_signals); // If the terminal closes, we might get this
@@ -143,6 +143,10 @@ int main (int argc, char * const argv[])
     }
     
     return 0;
+    
+ERROR:
+    cleanup();
+    return -1;
 }
 
 void parse_args(int argc, char * const argv[])
@@ -157,7 +161,7 @@ void parse_args(int argc, char * const argv[])
     }
     
     //while ((ch = getopt(argc, argv, "i:u:p:f:Dqh")) != -1)
-    while ((ch = getopt(argc, argv, "u:p:i:m:f:DTvqh")) != -1)
+    while ((ch = getopt(argc, argv, "u:p:i:m:f:ADTvqh")) != -1)
     {
         switch (ch)
         {
@@ -184,22 +188,27 @@ void parse_args(int argc, char * const argv[])
             case 'f':
             conf_file = optarg;
             break;
-                            
+            
+            case 'A':
+            flag_changeroute = 1;
+            break;
+            
             case 'D':
-            daemon_flag = 1;
+            flag_daemon = 1;
             break;
             
             case 'T':
-            tun_gre_flag = 0;
+            flag_test = 0;
             break;
             
             case 'v':
-            verbose_flag = 1;
+            flag_verbose = 1;
             break;
             
             case 'q':
-            quit_flag = 1;
+            flag_quit = 1;
             break;
+            
             case 'h':
             case '?':
             default:
@@ -209,7 +218,7 @@ void parse_args(int argc, char * const argv[])
     argc -= optind;
     argv += optind;
     
-    if (!quit_flag)
+    if (!flag_quit)
     {
         if (conf_file == NULL) // if do not use configure file, username and password are required
         {
@@ -238,23 +247,38 @@ void parse_conf_file(const char *conf)
     fputs("*****TODO*******\n", stderr);
 }
 
-int set_gre_if_tunnel()
+/*
+ * @param type, T_SET, T_REMOVE
+ * @param changeroute, 0 indicates not to change route, otherwise, change default gateway
+ */
+#define T_SET 1
+#define T_REMOVE 0
+static int gre_if_op(int op, int changeroute, in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote, in_addr_t netmask)
 {
     char cmd[256];
-    char ssource[16], sdest[16], sremote[16], snetmask[16];
-    snprintf(ssource, 16, inet_itoa(clientip));
-    snprintf(sdest, 16, inet_itoa(gre));
-    snprintf(sremote, 16, inet_itoa(gre_client_ip));
-    snprintf(snetmask, 16, inet_itoa(net_mask));
+    char ssrc[16], sdst[16], slocal[16], sremote[16], snetmask[16];
+    snprintf(ssrc, 16, inet_itoa(src));
+    snprintf(sdst, 16, inet_itoa(dst));
+    snprintf(slocal, 16, inet_itoa(local));
+    snprintf(sremote, 16, inet_itoa(remote));
+    snprintf(snetmask, 16, inet_itoa(netmask));
+    /*
+    if (changeroute)
+        snprintf(cmd, sizeof(cmd), "/usr/local/bin/mac-gre -s%s -d%s -l%s -r%s -n%s -C%s", ssrc, sdst, slocal, sremote, snetmask); */
     
-    snprintf(cmd, sizeof(cmd), "/usr/local/bin/tun-gre -D -s%s -d%s -l%s -r%s -n%s", ssource, sdest, ssource, sremote, snetmask);
+    snprintf(cmd, sizeof(cmd), "/usr/local/bin/mac-gre -s%s -d%s -l%s -r%s -n%s", ssrc, sdst, slocal, sremote, snetmask);
 
     return system(cmd);
 }
 
+int set_gre_if_tunnel()
+{
+    return gre_if_op(T_SET, flag_changeroute, clientip, gre, clientip, gre_client_ip, net_mask);
+}
+
 int remove_gre_if_tunnel()
 {
-    return system("/usr/local/bin/tun-gre -q");
+    return gre_if_op(T_REMOVE, flag_changeroute, clientip, gre, clientip, gre_client_ip, net_mask);
 }
 
 int quit_daemon()
@@ -337,10 +361,11 @@ void usage()
         If -f and -u or -p supplied at same time, \
         use -u or -p instead of the parameters in config file\n", stderr);
 */
+    fputs("\t-A\t\tPass all traffic over gre interface\n", stderr);
     fputs("\t-D\t\tRun as daemon\n", stderr);
-    fputs("\t-T\t\tDo NOT start tun-gre after connected to auth server\n", stderr);
+    fputs("\t-T\t\tTest mode, do NOT set gre tunnel and address\n", stderr);
     fputs("\t-v\t\tVerbose mode\n", stderr);
-    fputs("\t-q\t\tQuit all daemon\n",stderr);
+    fputs("\t-q\t\tQuit daemon\n",stderr);
 }
 
 void process_signals(int sig)
@@ -355,6 +380,7 @@ void process_signals(int sig)
                 {
                     log_warning("Failed sending keep-alive packets.");
                     stop_listen();
+                    connected = 0;
                     goto end;
                 }
             }
@@ -363,9 +389,8 @@ void process_signals(int sig)
         case SIGHUP:
         case SIGINT:
             log_notice("[process_signals]: user interupted\n");
-        case SIGTERM:
         case SIGQUIT:
-            log_out();
+        case SIGTERM:
             goto end;
             break;
         default:
@@ -376,18 +401,18 @@ void process_signals(int sig)
     return;
     
 end:
-    if (daemon_flag)
-    {
-        lockf(lockfd, F_ULOCK, 0);
-        close(lockfd);
-        log_notice("Daemon ended.");
-    }
+    cleanup();
     exit(0);
 }
 
-void clean_up()
+void cleanup()
 {
+    if (flag_daemon) {
+        lockf(lockfd, F_ULOCK, 0);
+        close(lockfd);
+    }
     if (flag_gre_if_isset) remove_gre_if_tunnel();
     if (connected) log_out();
+    if (flag_daemon) log_notice("Daemon ended.");
     if (log_opened) closelog();
 }

@@ -50,6 +50,11 @@
 #define CONNECTION_TIME_OUT 3
 #endif
 
+//发送、接收超时，单位，秒
+#ifndef SND_RCV_TIME_OUT
+#define SND_RCV_TIME_OUT 1
+#endif
+
 //与认证服务器保持连接最大超时时间，单位，秒
 #ifndef MAX_TIME_OUT
 #define MAX_TIME_OUT 180
