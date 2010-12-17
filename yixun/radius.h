@@ -13,9 +13,9 @@
 #include <netinet/in.h>
 
 
-extern in_addr_t gre, gre_client_ip, gateway_ip, net_mask;  //out parameters
+extern in_addr_t gre_src, gre_dst, gre_local, gre_remote, net_mask;  //out parameters
+extern in_addr_t auth_server_addr, msg_server_addr;
 extern uint32_t timeout, upload_band, download_band;
-extern in_addr_t clientip;			// IP address
 
 //extern int set_config(const char *ifname, const char *username, const char *password);
 extern int set_config(const char *username, const char *password, const char *serverip, const char *clientip, const char *mac);

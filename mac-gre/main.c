@@ -44,11 +44,13 @@ static in_addr_t local, remote, src, dst, netmask, gateway;
 void parse_args(int argc, char * const argv[]);
 
 int find_unused_if(char ifname[]);
-int find_if_with_addr(char ifname[], in_addr_t local, in_addr_t remote, in_addr_t src, in_addr_t dst);
+int find_if_with_addr(char ifname[], in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote);
 
-int set_if_addr_tunnel(char ifname[], in_addr_t local, in_addr_t remote, in_addr_t mask, in_addr_t src, in_addr_t dst);
-
+int set_if_addr_tunnel(char ifname[], in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote, in_addr_t mask);
 int delete_if_addr_tunnel(char ifname[]);
+
+int add_gre_if(in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote, in_addr_t mask);
+int remove_gre_if(in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote);
 
 //int set_if_flag(char ifname[], int flag);
 
@@ -77,15 +79,19 @@ int main (int argc, char * const argv[])
     return 0;
     */
     
-    char gre_if_name[IFNAMSIZ];
-    
     parse_args(argc, argv); //处理参数
     
-    if (!flag_revert) {
-        if (find_unused_if(gre_if_name) < 0)
+    if (!flag_revert) {        
+        char ifname[IFNAMSIZ];
+        if (find_unused_if(ifname) < 0) {
+            fprintf(stderr, "add_gre_if: unable to find unused gre interface.\n");
             return -1;
-        if (set_if_addr_tunnel(gre_if_name, local, remote, netmask, src, dst) < 0)
-            return -2;
+        }
+        
+        if (set_if_addr_tunnel(ifname, src, dst, local, remote, netmask) < 0) {
+            fprintf(stderr, "add_gre_if: error set address of %s\n", ifname);
+            return -1;
+        }
         
         if (remote == dst)
             route_delete(remote, 0xffffffff);
@@ -99,18 +105,18 @@ int main (int argc, char * const argv[])
                 rt_list = p;
             }
             
-            route_add(dst, 0, gateway, NULL);
+            route_add(dst, 0xffffffff, gateway, NULL);
             route_delete(0, 0);
+            /*
             if (remote == dst)
-                route_add(0, 0, 0, gre_if_name);
+                route_add(0, 0, 0, ifname);
             else
-                route_add(0, 0, remote, NULL);
+                route_add(0, 0, remote, NULL); */
+            route_add(0, 0, 0, ifname);
         }
     } else {
-        if (find_if_with_addr(gre_if_name, local, remote, src, dst) < 0)
+        if (remove_gre_if(src, dst, local, remote) < 0)
             return -1;
-        if (delete_if_addr_tunnel(gre_if_name) < 0)
-            return -2;
 
         if (flag_changeroute) {
             route_add(0, 0, gateway, NULL);
@@ -136,7 +142,7 @@ void parse_args(int argc, char * const argv[])
     if (argc == 1)
         goto usage;
     
-    while ((ch = getopt(argc, argv, "l:r:s:d:n:C:cvh")) != -1) {
+    while ((ch = getopt(argc, argv, "l:r:s:d:n:C:cuh")) != -1) {
         switch (ch) {
             case 'l':
                 local = inet_addr(optarg);
@@ -167,7 +173,7 @@ void parse_args(int argc, char * const argv[])
                 flag_chksum = 1;
                 break;
 
-            case 'v':
+            case 'u':
                 flag_revert = 1;
                 break;
                 
@@ -251,16 +257,16 @@ PASSROUTE:
     return;
     
 usage:
-    fprintf(stderr,"Usage: %s {options} {route to be changed}\n",argv[0]);
+    fprintf(stderr,"Usage: %s {options} {routes to be changed} {...}\n",argv[0]);
 	fputs("  options:\n",stderr);
 	fputs("\t-l <local address>\tset address of local host\n", stderr);
 	fputs("\t-r <remote address>\tset address of remote host(p-p)\n", stderr);
 	fputs("\t-s <src address>\tset address of tunnel src\n", stderr);
-	fputs("\t-d <dst address>\tset address of tunnel dstination\n", stderr);
+	fputs("\t-d <dst address>\tset address of tunnel dst\n", stderr);
 	fputs("\t-n <netmask>\t\tset interface netmask\n",stderr);
 	fputs("\t-C <route>\t\tchange default route\n",stderr);
 	fputs("\t-c\t\t\ttun on tunnel checksum\n",stderr);
-	fputs("\t-v\t\t\trevert the changed route\n",stderr);
+	fputs("\t-u\t\t\trevert the changes, ie, remove tunnel, etc.\n",stderr);
     
     exit(-1);
 }
@@ -309,7 +315,7 @@ int find_unused_if(char ifname[])
     return i < MAX_GREIF_CNT ? 0 : -1;
 }
 
-int find_if_with_addr(char ifname[], in_addr_t local, in_addr_t remote, in_addr_t src, in_addr_t dst)
+int find_if_with_addr(char ifname[], in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote)
 {
     int i;
     int sock;
@@ -349,7 +355,7 @@ int find_if_with_addr(char ifname[], in_addr_t local, in_addr_t remote, in_addr_
             continue;
         
         /* we have found one, and just find only one */
-        printf("find one: %s\n", ifrq.ifr_name);
+        //printf("find one: %s\n", ifrq.ifr_name);
         strcpy(ifname, ifrq.ifr_name);
         break;
     }
@@ -358,7 +364,7 @@ int find_if_with_addr(char ifname[], in_addr_t local, in_addr_t remote, in_addr_
     return i < MAX_GREIF_CNT ? 0 : -1;
 }
 
-int set_if_addr_tunnel(char ifname[], in_addr_t local, in_addr_t remote, in_addr_t mask, in_addr_t src, in_addr_t dst)
+int set_if_addr_tunnel(char ifname[], in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote, in_addr_t mask)
 {
     int sock;
     
@@ -573,6 +579,42 @@ static int find_if_with_name(const char *iface, struct sockaddr_dl *out)
 }
 
 
+int add_gre_if(in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote, in_addr_t mask)
+{
+    char ifname[IFNAMSIZ];
+    if (find_unused_if(ifname) < 0) {
+        fprintf(stderr, "add_gre_if: unable to find unused gre interface.\n");
+        return -1;
+    }
+    
+    if (set_if_addr_tunnel(ifname, src, dst, local, remote, mask) < 0) {
+        fprintf(stderr, "add_gre_if: error set address of %s\n", ifname);
+        return -1;
+    }
+    
+    return 0;
+}
+
+
+int remove_gre_if(in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote)
+{
+    char ifname[IFNAMSIZ];
+    if (find_if_with_addr(ifname, src, dst, local, remote) < 0) {
+        fprintf(stderr, "remove_gre_if: unable to find gre interface.\n");
+        return -1;
+    }
+    
+    if (delete_if_addr_tunnel(ifname) < 0) {
+        fprintf(stderr, "remove_gre_if: unable to delete address of %s\n", ifname);
+        return -1;
+    }
+    
+    return 0;
+}
+
+
+
+
 static int route_op(u_char op, in_addr_t dst, in_addr_t mask, in_addr_t gateway, const char *iface)
 {
   
@@ -676,7 +718,7 @@ static int route_op(u_char op, in_addr_t dst, in_addr_t mask, in_addr_t gateway,
         case RTM_DELETE:
             msg.msghdr.rtm_type = op;
             msg.msghdr.rtm_addrs |= RTA_GATEWAY;
-            //msg.msghdr.rtm_flags |= RTF_GATEWAY;
+            msg.msghdr.rtm_flags |= RTF_GATEWAY;
             
             break;
             

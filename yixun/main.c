@@ -34,6 +34,9 @@ static char * cip;
 static char * mac;
 static char * conf_file;
 
+static int extr_argc;
+static char * const *extr_argv;
+
 void usage();
 void parse_args(int argc, char * const argv[]);
 void parse_conf_file(const char *conf);
@@ -198,7 +201,7 @@ void parse_args(int argc, char * const argv[])
             break;
             
             case 'T':
-            flag_test = 0;
+            flag_test = 1;
             break;
             
             case 'v':
@@ -217,6 +220,9 @@ void parse_args(int argc, char * const argv[])
     }
     argc -= optind;
     argv += optind;
+    
+    extr_argc = argc;
+    extr_argv = argv;
     
     if (!flag_quit)
     {
@@ -248,37 +254,85 @@ void parse_conf_file(const char *conf)
 }
 
 /*
- * @param type, T_SET, T_REMOVE
- * @param changeroute, 0 indicates not to change route, otherwise, change default gateway
+ * @param op, T_SET, T_REMOVE
+ * @param flag, 0 indicates not to change route
+ *              1, change default gateway and routes followed
+ *              2, revert the changes
  */
-#define T_SET 1
-#define T_REMOVE 0
-static int gre_if_op(int op, int changeroute, in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote, in_addr_t netmask)
+#define FLAG_SET 0x01
+#define FLAG_CROUTE 0x02
+static int gre_if_op(int flag, in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote, in_addr_t netmask, int argc, char *const argv[])
 {
-    char cmd[256];
+    char cmd[512];
+    char tmp[128];
     char ssrc[16], sdst[16], slocal[16], sremote[16], snetmask[16];
     snprintf(ssrc, 16, inet_itoa(src));
     snprintf(sdst, 16, inet_itoa(dst));
     snprintf(slocal, 16, inet_itoa(local));
     snprintf(sremote, 16, inet_itoa(remote));
     snprintf(snetmask, 16, inet_itoa(netmask));
-    /*
-    if (changeroute)
-        snprintf(cmd, sizeof(cmd), "/usr/local/bin/mac-gre -s%s -d%s -l%s -r%s -n%s -C%s", ssrc, sdst, slocal, sremote, snetmask); */
     
-    snprintf(cmd, sizeof(cmd), "/usr/local/bin/mac-gre -s%s -d%s -l%s -r%s -n%s", ssrc, sdst, slocal, sremote, snetmask);
+    /*
+    if (flag & FLAG_SET) {
+        if (flag & FLAG_CROUTE) {
+            strcpy(cmd, "/usr/local/bin/mac-gre -C210.37.152.1");
+        } else {
+            strcpy(cmd, "/usr/local/bin/mac-gre");
+        }
+    } else {
+        if (flag & FLAG_CROUTE) {
+            strcpy(cmd, "/usr/local/bin/mac-gre -u -C210.37.152.1");
+        } else {
+            strcpy(cmd, "/usr/local/bin/mac-gre -u");
+        }
+    } */
+    
+    strcpy(cmd, "/usr/local/bin/mac-gre");
+    if ((flag & FLAG_SET) == 0)
+        strcat(cmd, " -u");
+    
+    sprintf(tmp, " -s%s -d%s -l%s -r%s", ssrc, sdst, slocal, sremote);
+    strcat(cmd, tmp);
+    
+    if (flag & FLAG_SET) {
+        sprintf(tmp, " -n%s", inet_itoa(netmask));
+        strcat(cmd, tmp);
+    }
 
+    if (flag & FLAG_CROUTE) {
+        strcat(cmd, " -C210.37.152.1 ");
+        strcat(cmd, inet_itoa(auth_server_addr));
+        if (msg_server_addr != 0) {
+            strcat(cmd, " ");
+            strcat(cmd, inet_itoa(msg_server_addr));
+        }
+        
+        int i;
+        for (i = 0; i < argc; i++) {
+            size_t remain = sizeof(cmd) - strlen(cmd);
+            if (remain <= 3 || argv[i] == NULL)
+                break;
+            
+            strncat(cmd, " ", remain);
+            strncat(cmd, argv[i], remain - 1);
+        }
+    }
+    printf("cmd:%s\n", cmd);
     return system(cmd);
 }
 
 int set_gre_if_tunnel()
 {
-    return gre_if_op(T_SET, flag_changeroute, clientip, gre, clientip, gre_client_ip, net_mask);
+    return gre_if_op(flag_changeroute ? FLAG_SET | FLAG_CROUTE : FLAG_SET, \
+                     gre_src, gre_dst, gre_local, gre_remote, net_mask, \
+                     extr_argc, extr_argv);
 }
 
 int remove_gre_if_tunnel()
 {
-    return gre_if_op(T_REMOVE, flag_changeroute, clientip, gre, clientip, gre_client_ip, net_mask);
+    return gre_if_op(flag_changeroute ? FLAG_CROUTE : 0, \
+                     gre_src, gre_dst, gre_local, gre_remote, 0, \
+                     extr_argc, extr_argv);
 }
 
 int quit_daemon()
