@@ -23,7 +23,7 @@ static char *progname;
 
 static int log_opened = 0;
 static int connected = 0;
-static int tun_gre_running = 0;
+static int flag_gre_if_isset = 0;
 
 //static char * interface;
 static char * username;
@@ -38,8 +38,8 @@ void parse_args(int argc, char * const argv[]);
 void parse_conf_file(const char *conf);
 void process_signals(int sig);
 int quit_daemon();
-int start_tun_gre();
-int stop_tun_gre();
+int set_gre_if_tunnel();
+int remove_gre_if_tunnel();
 int lock_file(const char *lockfile); // On error, return -1;
 void clean_up();
 
@@ -96,12 +96,12 @@ int main (int argc, char * const argv[])
     
     if (tun_gre_flag)
     {
-        if (start_tun_gre() < 0)
+        if (set_gre_if_tunnel() < 0)
         {
             log_perror("[main] start tun-gre");
             return -4;
         }
-        tun_gre_running = 1;
+        flag_gre_if_isset = 1;
     }
     
     if (daemon_flag)
@@ -238,7 +238,7 @@ void parse_conf_file(const char *conf)
     fputs("*****TODO*******\n", stderr);
 }
 
-int start_tun_gre()
+int set_gre_if_tunnel()
 {
     char cmd[256];
     char ssource[16], sdest[16], sremote[16], snetmask[16];
@@ -252,7 +252,7 @@ int start_tun_gre()
     return system(cmd);
 }
 
-int stop_tun_gre()
+int remove_gre_if_tunnel()
 {
     return system("/usr/local/bin/tun-gre -q");
 }
@@ -369,7 +369,7 @@ void process_signals(int sig)
             goto end;
             break;
         default:
-            log_warning("[process_signals] Unkown signal %d", sig);
+            log_warning("[process_signals]: Unkown signal %d", sig);
         break;
     }      
     signal(sig, process_signals); // let signal be caught again
@@ -387,7 +387,7 @@ end:
 
 void clean_up()
 {
-    if (tun_gre_running) stop_tun_gre();
+    if (flag_gre_if_isset) remove_gre_if_tunnel();
     if (connected) log_out();
     if (log_opened) closelog();
 }

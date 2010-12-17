@@ -23,6 +23,7 @@
 #include <errno.h>
 #include <pthread.h>
 
+#include <fcntl.h>
 
 #include "common_macro.h"
 #include "common_logs.h"
@@ -80,6 +81,11 @@ static int get_parameters(uint8_t *buff, \
 						  in_addr_t *gre, in_addr_t *gre_client_ip, in_addr_t *gateway_ip, in_addr_t *net_mask, \
 						  uint32_t *timeout, uint32_t *upload_band, uint32_t *download_band); //认证通过后，获取接入服务器给的参数
 
+static int connect_tm(int socket, \
+                      const struct sockaddr *addr,
+                      socklen_t addr_len, \
+                      struct timeval *timeout); // 带有超时的connect
+
 
 //int set_config(const char *ifname, const char *username, const char *password)
 //int set_config(const char *username, const char *password, const char *ipaddr, const char *lladdr)
@@ -90,12 +96,12 @@ int set_config(const char *username, const char *password, const char *sip, cons
 	
 	if (strcmp(username, uname) != 0)
     {
-        strncpy(uname, username, sizeof(uname) - 1); uname[sizeof(uname) - 1] = '\0'; // 保存用户名
+        strncpy(uname, username, sizeof(uname)); uname[sizeof(uname) - 1] = '\0'; // 保存用户名
         settingChanged = -1;
     }
     if (password != NULL && strcmp(password, pwd) != 0)
     {
-        strncpy(pwd, password, sizeof(pwd) - 1); pwd[sizeof(pwd) - 1] = '\0';	// 保存密码
+        strncpy(pwd, password, sizeof(pwd)); pwd[sizeof(pwd) - 1] = '\0';	// 保存密码
         settingChanged = -1;
     }
     
@@ -121,7 +127,7 @@ int set_config(const char *username, const char *password, const char *sip, cons
     if (sip != NULL)
     {
         char tmp[64];
-        strncpy(tmp, sip, sizeof(tmp) - 1);
+        strncpy(tmp, sip, sizeof(tmp));
         tmp[sizeof(tmp) - 1] = '\0';
         char * args[2] = {NULL};
         char *instr = tmp;
@@ -183,7 +189,12 @@ int log_in()
         goto ERROR;
     }
     */
-    if (connect(sockfd, (struct sockaddr *)&auth_server, sizeof(struct sockaddr_in)) < 0)
+    
+    struct timeval tv;
+    tv.tv_sec = CONNECTION_TIME_OUT;
+    tv.tv_usec = 0;
+    
+    if (connect_tm(sockfd, (struct sockaddr *)&auth_server, sizeof(struct sockaddr_in), &tv) < 0)
     {
         log_perror("[log_in] connect %s", inet_ntoa(auth_server.sin_addr));
         goto ERROR;
@@ -265,7 +276,11 @@ int send_keep_alive()
         goto ERROR;
     }
     
-    if (connect(sockfd, (struct sockaddr *)&auth_server, sizeof(struct sockaddr_in)) < 0)
+    struct timeval tv;
+    tv.tv_sec = CONNECTION_TIME_OUT;
+    tv.tv_usec = 0;
+    
+    if (connect_tm(sockfd, (struct sockaddr *)&auth_server, sizeof(struct sockaddr_in), &tv) < 0)
     {
         log_perror("[send_keep_alive] connect %s", inet_ntoa(auth_server.sin_addr));
         goto ERROR;
@@ -311,7 +326,11 @@ int log_out()
         goto ERROR;
     }
     
-    if (connect(sockfd, (struct sockaddr *)&auth_server, sizeof(struct sockaddr_in)) < 0)
+    struct timeval tv;
+    tv.tv_sec = CONNECTION_TIME_OUT;
+    tv.tv_usec = 0;
+    
+    if (connect_tm(sockfd, (struct sockaddr *)&auth_server, sizeof(struct sockaddr_in), &tv) < 0)
     {
         log_perror("[log_out] connect");
         goto ERROR;
@@ -398,7 +417,7 @@ int stop_listen()
 	return 0;
 }
 
-int accept_client()
+inline int accept_client()
 {
     static fd_set rfds;
     static struct timeval tv;
@@ -710,4 +729,82 @@ static void free_rds_packet(rds_packet *p)
         t = t->next;
         free(s);
     }
+}
+
+/*
+ * connect_with_timeout
+ * wrapper for connect(), add timeout option
+ * @param socket
+ * @param sockaddr
+ * @param address_len
+ * @param timeout
+ */
+static int connect_tm(int socket, \
+                       const struct sockaddr *addr,
+                       socklen_t addr_len, \
+                       struct timeval *timeout) {
+    int     rval;
+    int     sock_flag;
+    int     sock_err;
+    struct  timeval tv;
+    fd_set  fd;
+    
+    int sock_is_blocking = 0;
+    
+    // Set non-blocking 
+    if ((sock_flag = fcntl(socket, F_GETFL, NULL)) < 0)
+        return -1;
+    if ((sock_flag & O_NONBLOCK) == 0) {
+        sock_is_blocking = 1;
+        sock_flag |= O_NONBLOCK;
+        if (fcntl(socket, F_SETFL, sock_flag) < 0)
+            return -1;
+    }
+
+    // connect
+    rval = connect(socket, addr, addr_len);
+    if (rval < 0) {
+        if (errno == EINPROGRESS) {
+            dprintf("connect_tm: EINPROGRESS in connect() - selecting\n");
+            do {
+                tv.tv_sec = timeout->tv_sec;
+                tv.tv_usec = timeout->tv_usec;
+                FD_ZERO(&fd);
+                FD_SET(socket, &fd);
+                rval = select(socket + 1, NULL, &fd, NULL, &tv);
+                if (rval < 0 && errno != EINTR) {
+                    dprintf("connect_tm: Error connecting %d - %s\n", errno, strerror(errno));
+                    return -1;
+                } else if (rval > 0) {
+                    // Socket selected for write
+                    socklen_t len = sizeof(int);
+                    if (getsockopt(socket, SOL_SOCKET, SO_ERROR, (void*)(&sock_err), &len) < 0) {
+                        dprintf("connect_tm: Error getsockopt() %d - %s\n", errno, strerror(errno));
+                        return -1;
+                    }
+                    // Check the value returned... 
+                    if (sock_err) {
+                        dprintf("connect_tm: Error in delayed connection() %d - %s\n", sock_err, strerror(sock_err));
+                        return -1;
+                    }
+                    break;
+                } else {
+                    dprintf("connect_tm: Timeout in select() - Cancelling!\n");
+                    return -1;
+                }
+            } while (1);
+        } else {
+            dprintf("Error connecting %d - %s\n", errno, strerror(errno));
+            return 0;
+        }
+    }
+
+    // Set to blocking mode, if the socket is blocking mode before
+    if (sock_is_blocking) {
+        sock_flag &= (~O_NONBLOCK);
+        if (fcntl(socket, F_SETFL, sock_flag) < 0)
+            return -1;
+    }
+    
+    return 0;
 }

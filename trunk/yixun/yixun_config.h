@@ -47,7 +47,7 @@
 
 //连接超时，单位，秒
 #ifndef CONNECTION_TIME_OUT
-#define CONNECTION_TIME_OUT 5
+#define CONNECTION_TIME_OUT 3
 #endif
 
 //与认证服务器保持连接最大超时时间，单位，秒
