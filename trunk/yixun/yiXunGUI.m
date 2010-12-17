@@ -247,13 +247,13 @@ NSThread *mlistenThread = nil;
 
     [arguments addObject:@"-D"];
     [arguments addObject:[NSString stringWithFormat:@"%s %s", "-l", inet_itoa(clientip)]];
-    [arguments addObject:[NSString stringWithFormat:@"%s %s", "-r", inet_itoa(gre_client_ip)]];
+    [arguments addObject:[NSString stringWithFormat:@"%s %s", "-r", inet_itoa(gre_remote)]];
     [arguments addObject:[NSString stringWithFormat:@"%s %s", "-s", inet_itoa(clientip)]];
-    [arguments addObject:[NSString stringWithFormat:@"%s %s", "-d", inet_itoa(gre)]];
+    [arguments addObject:[NSString stringWithFormat:@"%s %s", "-d", inet_itoa(gre_dst)]];
     [arguments addObject:[NSString stringWithFormat:@"%s %s", "-n", inet_itoa(net_mask)]];
     
 	[task setStandardOutput:pipe];
-	[task setLaunchPath:@"/usr/local/bin/tun-gre"];
+	[task setLaunchPath:@"/usr/local/bin/mac-gre"];
 	[task setArguments:arguments];
 	[task launch];
 
@@ -281,7 +281,7 @@ NSThread *mlistenThread = nil;
     [arguments addObject:@"-q"];
     
 	[task setStandardOutput:pipe];
-	[task setLaunchPath:@"/usr/local/bin/tun-gre"];
+	[task setLaunchPath:@"/usr/local/bin/mac-gre"];
 	[task setArguments:arguments];
 	[task launch];
 #ifdef DEBUG    

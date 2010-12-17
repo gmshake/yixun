@@ -41,12 +41,11 @@
 #define RDS_PACKET_LEN(p) (ntohs((p)->length) + 8)
 #endif
 
-in_addr_t gre, gre_client_ip, gateway_ip, net_mask;  //out parameters
+in_addr_t gre_src, gre_dst, gre_local, gre_remote, gateway_ip, net_mask;  //out parameters
 uint32_t timeout, upload_band, download_band;		// out
 
 unsigned auth_server_maskbits = 0; // Auth server netmask bits
-//in_addr_t auth_server_addrs = 0;  // Auth server ip
-in_addr_t clientip = 0;			// IP address
+in_addr_t auth_server_addr = 0, msg_server_addr = 0;  // Auth server ip, msg server ip
 
 int start_listen();
 int stop_listen();
@@ -78,7 +77,7 @@ static void add_segment(rds_packet *p, enum segment_type type, uint16_t length, 
 static void make_send_buff(void *buff, rds_packet *p);	//将生成的发送包内容放到发送缓冲区
 
 static int get_parameters(uint8_t *buff, \
-						  in_addr_t *gre, in_addr_t *gre_client_ip, in_addr_t *gateway_ip, in_addr_t *net_mask, \
+						  in_addr_t *gre_dst, in_addr_t *gre_remote, in_addr_t *gateway_ip, in_addr_t *net_mask, \
 						  uint32_t *timeout, uint32_t *upload_band, uint32_t *download_band); //认证通过后，获取接入服务器给的参数
 
 static int connect_tm(int socket, \
@@ -107,11 +106,11 @@ int set_config(const char *username, const char *password, const char *sip, cons
     
     if (cip != NULL)
     {
-        clientip = inet_addr(cip);
-        if (clientip != (in_addr_t)0 && clientip != (in_addr_t)-1)
+        gre_src = inet_addr(cip);
+        if (gre_src != (in_addr_t)0 && gre_src != (in_addr_t)-1)
             opt_clientip = -1;
         else
-            log_err("[set_config] Invalid ip address:%s\n", clientip);
+            log_err("[set_config] Invalid ip address:%s\n", gre_src);
     }
     
     if (mac != NULL)
@@ -145,6 +144,8 @@ int set_config(const char *username, const char *password, const char *sip, cons
         auth_server.sin_addr.s_addr = inet_addr(AUTH_SERVER);
         auth_server_maskbits = AUTH_SERVER_MASKBITS;
     }
+    
+    auth_server_addr = auth_server.sin_addr.s_addr;
 /*
     auth_server_addrs = ntohl(auth_server.sin_addr.s_addr);
     auth_server_addrs &=  ~((1 << (32 - auth_server_maskbits)) - 1);
@@ -185,19 +186,20 @@ int log_in()
 	
 	if (settingChanged)
 	{
-        if (!opt_clientip && get_ip_mac_by_socket(sockfd, &clientip, opt_lladdr ? NULL : eth_addr) < 0)
-        {
+        if (get_ip_mac_by_socket(sockfd, &gre_local, opt_lladdr ? NULL : eth_addr) < 0) {
             log_err("[log_in] get ip address and eth_addr");
             goto ERROR;
         }
+        if (!opt_clientip)
+            gre_src = gre_local;
 		
         uint8_t *sec_pwd = (uint8_t *)malloc(sizeof(uint8_t) * (strlen(pwd) + 2));
-		encode_pwd_with_ip(sec_pwd, pwd, clientip);
+		encode_pwd_with_ip(sec_pwd, pwd, gre_src);
 
 		rds_packet *packet = make_rds_packet(u_login);
 
 		add_segment(packet,  c_mac, 6, 6, eth_addr);
-		add_segment(packet,  c_ip, 4, 4, (uint8_t *)&clientip);
+		add_segment(packet,  c_ip, 4, 4, (uint8_t *)&gre_src);
 		add_segment(packet,  c_user, MAX_USER_NAME_LEN, strlen(uname), (uint8_t *)uname); //***Hack,用户名最长为20***
 		add_segment(packet,  c_pwd, strlen((char *)sec_pwd), strlen((char *)sec_pwd), sec_pwd);
 		add_segment(packet,  c_ver, 4,4, version);
@@ -213,7 +215,7 @@ int log_in()
 		settingChanged = 0;
     }
     
-
+    
     tv.tv_sec = SND_RCV_TIME_OUT;
     tv.tv_usec = 0;
     if (setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) < 0) {
@@ -226,7 +228,7 @@ int log_in()
         log_perror("[log_in] setsockopt");
         goto ERROR;
     }
-
+    
     int ret = send(sockfd, s_buff, len, 0);
 
     if (ret < 0)
@@ -285,14 +287,16 @@ int send_keep_alive()
 	
 	if(s_buff[0] == 0) //因为这个发送包的内容是固定的，因此没有必要每次都重新再做这个包
 	{
-        if (!opt_clientip && get_ip_mac_by_socket(sockfd, &clientip, NULL) < 0)
-        {
-            log_perror("[send_keep_alive] get ip address and eth_addr");
+        if (get_ip_mac_by_socket(sockfd, &gre_local, opt_lladdr ? NULL : eth_addr) < 0) {
+            log_err("[send_keep_alive] get ip address and eth_addr");
             goto ERROR;
         }
+        if (!opt_clientip)
+            gre_src = gre_local;
+        
 		rds_packet *packet = make_rds_packet(u_keepalive);
 		
-		add_segment(packet, c_ip, 4, 4, (uint8_t *)&clientip);
+		add_segment(packet, c_ip, 4, 4, (uint8_t *)&gre_src);
 		add_segment(packet, c_user, MAX_USER_NAME_LEN, strlen(uname), (uint8_t *)uname); //***Hack,用户名最长为20***
 
 		make_send_buff(s_buff, packet);
@@ -348,15 +352,16 @@ int log_out()
 	
 	if(s_buff[0] == 0) //因为这个发送包的内容是固定的，因此没有必要每次都重新再做这个包
 	{
-        if (!opt_clientip && get_ip_mac_by_socket(sockfd, &clientip, NULL) < 0)
-        {
-            log_err("[log_out] get ip address and eth_addr\n");
+        if (get_ip_mac_by_socket(sockfd, &gre_local, opt_lladdr ? NULL : eth_addr) < 0) {
+            log_err("[log_out] get ip address and eth_addr");
             goto ERROR;
         }
+        if (!opt_clientip)
+            gre_src = gre_local;
         
 		rds_packet *packet = make_rds_packet(u_logout); //Hack:退出登录和保持活动连接只有这一个地方有差别
 		
-		add_segment(packet, c_ip, 4, 4, (uint8_t *)&clientip);
+		add_segment(packet, c_ip, 4, 4, (uint8_t *)&gre_src);
 		add_segment(packet, c_user, MAX_USER_NAME_LEN, strlen(uname), (uint8_t *)uname); //***Hack,用户名最长为20***
 		
 		make_send_buff(s_buff, packet);
@@ -492,8 +497,11 @@ inline int accept_client()
                 return 0;
             }
             
+            if (msg_server_addr == 0)
+                msg_server_addr = r_client.sin_addr.s_addr;
+            
             log_info("[accept_client] accept: %s\n", inet_ntoa(r_client.sin_addr));
-                        
+
             tv.tv_sec = 1;
             tv.tv_usec = 0;
             if (setsockopt(sock_client, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
@@ -548,7 +556,7 @@ static int do_with_server_info(uint8_t buff[], int sockfd)
             
             accept_client();
  
-            if (get_parameters(buff, &gre, &gre_client_ip, &gateway_ip, &net_mask, &timeout, &upload_band, &download_band) < 0)
+            if (get_parameters(buff, &gre_dst, &gre_remote, &gateway_ip, &net_mask, &timeout, &upload_band, &download_band) < 0)
             {
                 log_err("[do_with_server_info] Cannot get parameters\n");
                 stop_listen();
@@ -563,13 +571,13 @@ static int do_with_server_info(uint8_t buff[], int sockfd)
             struct in_addr a[4];
             char p1[4][20];
             
-            a[0].s_addr = gre; a[1].s_addr = gre_client_ip; a[2].s_addr = gateway_ip; a[3].s_addr = net_mask;
+            a[0].s_addr = gre_dst; a[1].s_addr = gre_remote; a[2].s_addr = gateway_ip; a[3].s_addr = net_mask;
             int i;
             for (i = 0; i < 4; i++) {
                 strcpy(p1[i], inet_ntoa(a[i]));
             }
             
-            log_notice("gre:%s clientip:%s gateway:%s netmask:%s\n", p1[0], p1[1], p1[2], p1[3]);
+            log_notice("gre_dst:%s gre_remote:%s gateway:%s netmask:%s\n", p1[0], p1[1], p1[2], p1[3]);
             log_notice("timeout:%u upload_band:%u download_band:%u\n", timeout, upload_band, download_band);
 
             break;
@@ -589,7 +597,7 @@ static int do_with_server_info(uint8_t buff[], int sockfd)
 }
 
 static int get_parameters(uint8_t *buff, \
-				   in_addr_t *gre, in_addr_t *gre_client_ip, in_addr_t *gateway_ip, in_addr_t *net_mask, \
+				   in_addr_t *gre_dst, in_addr_t *gre_remote, in_addr_t *gateway_ip, in_addr_t *net_mask, \
 				   uint32_t *timeout, uint32_t *upload_band, uint32_t *download_band)
 {
 	rds_packet *hd = (rds_packet *)buff;
@@ -607,10 +615,10 @@ static int get_parameters(uint8_t *buff, \
 		}
 		switch (p->type) {
 			case s_gre:
-				*gre = *((in_addr_t *)p->content);
+				*gre_dst = *((in_addr_t *)p->content);
 				break;
 			case s_cip:
-				*gre_client_ip = *((in_addr_t *)p->content);
+				*gre_remote = *((in_addr_t *)p->content);
 				break;
 			case s_gip:
 				*gateway_ip = *((in_addr_t *)p->content);
