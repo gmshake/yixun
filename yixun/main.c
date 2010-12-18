@@ -287,7 +287,7 @@ static int gre_if_op(int flag, in_addr_t src, in_addr_t dst, in_addr_t local, in
         }
     } */
     
-    strcpy(cmd, "/usr/local/bin/mac-gre");
+    strcpy(cmd, "/usr/local/bin/gre-config");
     if ((flag & FLAG_SET) == 0)
         strcat(cmd, " -u");
     

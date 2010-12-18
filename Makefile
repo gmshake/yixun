@@ -1,16 +1,16 @@
 all:
-	cd mac-gre && make
+	cd gre-config && make
 	cd yixun && make
 
 clean:
-	cd mac-gre && make clean
+	cd gre-config && make clean
 	cd yixun && make clean
 
 install:
-	cd mac-gre && make install
+	cd gre-config && make install
 	cd yixun && make install
 
 uninstall:
-	cd mac-gre && make uninstall
+	cd gre-config && make uninstall
 	cd yixun && make uninstall
 

@@ -145,7 +145,7 @@ static BOOL settingChanged = NO;
         system("/usr/local/bin/yixun -q");
     } else {
         char cmd[128];
-        snprintf(cmd, sizeof(cmd), "/usr/local/bin/yixun -D -u%s -p%s",
+        snprintf(cmd, sizeof(cmd), "/usr/local/bin/yixun -AD -u%s -p%s",
                  [[m_user stringValue] cStringUsingEncoding:NSUTF8StringEncoding],
                  [[m_pwd stringValue] cStringUsingEncoding:NSUTF8StringEncoding]);
         system(cmd);
