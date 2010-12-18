@@ -19,7 +19,7 @@ CCFLAGS += ${INC}
 
 OBJS = 
 
-PROGS = mac-gre
+PROGS = gre-config
 
 .PHONY:all
 	all: ${PROGS}
