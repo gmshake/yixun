@@ -53,8 +53,8 @@ int remove_gre_if(in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remot
 
 //int set_if_flag(char ifname[], int flag);
 
-static int route_op(u_char op, in_addr_t dst, in_addr_t mask, in_addr_t gateway, const char *iface);
-
+static int route_op(u_char op, in_addr_t dst, in_addr_t mask, in_addr_t *gateway, char *iface);
+int route_get(in_addr_t dst, in_addr_t mask, in_addr_t *gateway, char iface[]);
 int route_add(in_addr_t dst, in_addr_t mask, in_addr_t gateway, const char *iface);
 int route_change(in_addr_t dst, in_addr_t mask, in_addr_t gateway, const char *iface);
 int route_delete(in_addr_t dst, in_addr_t mask);
@@ -77,6 +77,7 @@ int main (int argc, char * const argv[])
     
     return 0;
     */
+    char ifp[IFNAMSIZ];
     
     parse_args(argc, argv); //处理参数
     
@@ -92,38 +93,48 @@ int main (int argc, char * const argv[])
             return -1;
         }
         
-        if (remote == dst)
+        if (remote == dst && route_get(remote, 0xffffffff, &gateway, ifp) == 0)
             route_delete(remote, 0xffffffff);
         
         if (flag_changeroute) {
             struct rt_list *p = rt_list;
             while (rt_list) {
-                route_add(rt_list->dst, rt_list->mask, gateway, NULL);
+                if (route_get(rt_list->dst, rt_list->mask, &gateway, ifp) == 0)
+                    route_add(rt_list->dst, rt_list->mask, gateway, gateway ? NULL : ifp);
                 p = rt_list->next;
                 free(rt_list);
                 rt_list = p;
             }
             
-            route_add(dst, 0xffffffff, gateway, NULL);
-            route_delete(0, 0);
+            if (route_get(dst, 0xffffffff, &gateway, ifp) == 0)
+                route_add(dst, 0xffffffff, gateway, gateway ? NULL : ifp);
+            //route_delete(0, 0);
             /*
             if (remote == dst)
                 route_add(0, 0, 0, ifname);
             else
                 route_add(0, 0, remote, NULL); */
-            route_add(0, 0, 0, ifname);
+            //route_add(0, 0, 0, ifname);
+            route_change(0, 0, 0, ifname);
         }
     } else {
         if (remove_gre_if(src, dst, local, remote) < 0)
             return -1;
 
         if (flag_changeroute) {
-            route_add(0, 0, gateway, NULL);
-            route_delete(dst, 0xffffffff);
+            if (route_get(dst, 0xffffffff, &gateway, ifp) == 0) {
+                route_add(0, 0, gateway, gateway ? NULL : ifp);
+                route_delete(dst, 0xffffffff);
+            }
             
             struct rt_list *p = rt_list;
             while (rt_list) {
-                route_delete(rt_list->dst, rt_list->mask);
+                in_addr_t tg;
+                char tp[IFNAMSIZ];
+                if (route_get(rt_list->dst, rt_list->mask, &tg, tp) == 0) {
+                    if (tg == gateway && strcmp(tp, ifp) == 0)
+                        route_delete(rt_list->dst, rt_list->mask);
+                }
                 p = rt_list->next;
                 free(rt_list);
                 rt_list = p;
@@ -612,9 +623,7 @@ int remove_gre_if(in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remot
 }
 
 
-
-
-static int route_op(u_char op, in_addr_t dst, in_addr_t mask, in_addr_t gateway, const char *iface)
+static int route_op(u_char op, in_addr_t dst, in_addr_t mask, in_addr_t *gateway, char *iface)
 {
   
 #define ROUNDUP(n)  ((n) > 0 ? (1 + (((n) - 1) | (sizeof(uint32_t) - 1))) : sizeof(uint32_t))
@@ -624,10 +633,12 @@ static int route_op(u_char op, in_addr_t dst, in_addr_t mask, in_addr_t gateway,
     if (msg.msghdr.rtm_addrs & (w)) {\
         len = ROUNDUP(u.sa.sa_len); bcopy((char *)&(u), cp, len); cp += len;\
     }
+    
     static int seq = 0;
     int err = 0;
     size_t len = 0;
     char *cp;
+    pid_t pid;
     
     union {
         struct	sockaddr sa;
@@ -638,21 +649,21 @@ static int route_op(u_char op, in_addr_t dst, in_addr_t mask, in_addr_t gateway,
     
     struct {
         struct rt_msghdr msghdr;
-        char buf[sizeof(struct sockaddr_in) * RTAX_MAX];
+        char buf[512];
     } msg;
 
     bzero(so_addr, sizeof(so_addr));
     bzero(&msg, sizeof(msg));
     
     cp = msg.buf;
-    
+    pid = getpid();
     //msg.msghdr.rtm_msglen  = 0;
     msg.msghdr.rtm_version = RTM_VERSION;
     //msg.msghdr.rtm_type    = RTM_ADD;
     msg.msghdr.rtm_index   = 0;
-    msg.msghdr.rtm_pid     = getpid();
+    msg.msghdr.rtm_pid     = pid;
     msg.msghdr.rtm_addrs   = 0;
-    msg.msghdr.rtm_seq     = seq++;
+    msg.msghdr.rtm_seq     = ++seq;
     msg.msghdr.rtm_errno   = 0;
     msg.msghdr.rtm_flags   = 0;
     
@@ -687,12 +698,12 @@ static int route_op(u_char op, in_addr_t dst, in_addr_t mask, in_addr_t gateway,
             msg.msghdr.rtm_flags |= RTF_UP;
             
             // Gateway
-            if ((gateway != 0 && gateway != 0xffffffff)) {
+            if ((gateway && *gateway != 0x0 && *gateway != 0xffffffff)) {
                 msg.msghdr.rtm_flags |= RTF_GATEWAY;
                 
                 so_addr[RTAX_GATEWAY].sin.sin_len    = sizeof(struct sockaddr_in);
                 so_addr[RTAX_GATEWAY].sin.sin_family = AF_INET;
-                so_addr[RTAX_GATEWAY].sin.sin_addr.s_addr = gateway;
+                so_addr[RTAX_GATEWAY].sin.sin_addr.s_addr = *gateway;
                 
                 if (iface != NULL) {
                     msg.msghdr.rtm_addrs |= RTA_IFP;
@@ -712,16 +723,18 @@ static int route_op(u_char op, in_addr_t dst, in_addr_t mask, in_addr_t gateway,
                 if (find_if_with_name(iface, &so_addr[RTAX_GATEWAY].sdl) < 0)
                     return -1;
             }
-            
             break;
         case RTM_DELETE:
             msg.msghdr.rtm_type = op;
             msg.msghdr.rtm_addrs |= RTA_GATEWAY;
             msg.msghdr.rtm_flags |= RTF_GATEWAY;
-            
             break;
-            
         case RTM_GET:
+            msg.msghdr.rtm_type = op;
+            msg.msghdr.rtm_addrs |= RTA_IFP;
+            so_addr[RTAX_IFP].sa.sa_family = AF_LINK;
+            so_addr[RTAX_IFP].sa.sa_len = sizeof(struct sockaddr_dl);
+            break;
         default:
             return EINVAL;
     }
@@ -746,6 +759,73 @@ static int route_op(u_char op, in_addr_t dst, in_addr_t mask, in_addr_t gateway,
         err = -1;
     }
     
+    if (op == RTM_GET) {
+		do {
+			len = read(sock, (char *)&msg, sizeof(msg));
+		} while (len > 0 && (msg.msghdr.rtm_seq != seq || msg.msghdr.rtm_pid != pid));
+		if (len < 0) {
+            perror("read from routing socket");
+            err = -1;
+        } else {
+            struct sockaddr *gate = NULL;
+            struct sockaddr_dl *ifp = NULL;
+            register struct sockaddr *sa;
+            
+            if (msg.msghdr.rtm_version != RTM_VERSION) {
+                fprintf(stderr, "routing message version %d not understood\n", msg.msghdr.rtm_version);
+                err = -1;
+                goto end;
+            }
+            if (msg.msghdr.rtm_msglen > len) {
+                fprintf(stderr, "message length mismatch, in packet %d, returned %lu\n", msg.msghdr.rtm_msglen, len);
+            }
+            if (msg.msghdr.rtm_errno)  {
+                fprintf(stderr, "message indicates error %d, %s\n", msg.msghdr.rtm_errno, strerror(msg.msghdr.rtm_errno));
+                err = -1;
+                goto end;
+            }
+            cp = msg.buf;
+            if (msg.msghdr.rtm_addrs) {
+                int i;
+                for (i = 1; i; i <<= 1) {
+                    if (i & msg.msghdr.rtm_addrs) {
+                        sa = (struct sockaddr *)cp;
+                        switch (i) {
+                            case RTA_DST:
+                                break;
+                            case RTA_GATEWAY:
+                                gate = sa;
+                                break;
+                            case RTA_NETMASK:
+                                break;
+                            case RTA_IFP:
+                                if (sa->sa_family == AF_LINK &&
+                                    ((struct sockaddr_dl *)sa)->sdl_nlen)
+                                    ifp = (struct sockaddr_dl *)sa;
+                                break;
+                        }
+                        ADVANCE(cp, sa);
+                    }
+                }
+            }
+            
+            if (gate == NULL && ifp == NULL)
+                err = -1;
+            else {
+                if (gate && msg.msghdr.rtm_flags & RTF_GATEWAY && gateway)
+                    *gateway = ((struct sockaddr_in *)gate)->sin_addr.s_addr;
+                else
+                    *gateway = 0;
+                if (ifp && iface) {
+                    strncpy(iface, ifp->sdl_data, ifp->sdl_nlen < IFNAMSIZ ? ifp->sdl_nlen : IFNAMSIZ);
+                    iface[IFNAMSIZ - 1] = '\0';
+                } else
+                    bzero(iface, IFNAMSIZ);
+            }
+        }
+	}
+
+end:
     if (close(sock) < 0) {
         perror("close");
     }
@@ -754,14 +834,19 @@ static int route_op(u_char op, in_addr_t dst, in_addr_t mask, in_addr_t gateway,
 #undef MAX_INDEX
 }
 
+int route_get(in_addr_t dst, in_addr_t mask, in_addr_t *gateway, char iface[])
+{
+    return route_op(RTM_GET, dst, mask, gateway, iface);
+}
+
 int route_add(in_addr_t dst, in_addr_t mask, in_addr_t gateway, const char *iface)
 {
-    return route_op(RTM_ADD, dst, mask, gateway, iface);
+    return route_op(RTM_ADD, dst, mask, &gateway, (char *)iface);
 }
 
 int route_change(in_addr_t dst, in_addr_t mask, in_addr_t gateway, const char *iface)
 {
-    return route_op(RTM_CHANGE, dst, mask, gateway, iface);
+    return route_op(RTM_CHANGE, dst, mask, &gateway, (char *)iface);
 }
 
 int route_delete(in_addr_t dst, in_addr_t mask)
