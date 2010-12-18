@@ -135,9 +135,9 @@
 /* End PBXHeadersBuildPhase section */
 
 /* Begin PBXNativeTarget section */
-		8D202CE80486D31800D8A456 /* yixun */ = {
+		8D202CE80486D31800D8A456 /* yixunPref */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 1DBD214808BA80EA00186707 /* Build configuration list for PBXNativeTarget "yixun" */;
+			buildConfigurationList = 1DBD214808BA80EA00186707 /* Build configuration list for PBXNativeTarget "yixunPref" */;
 			buildPhases = (
 				8D202CE90486D31800D8A456 /* Headers */,
 				8D202CEC0486D31800D8A456 /* Resources */,
@@ -149,7 +149,7 @@
 			);
 			dependencies = (
 			);
-			name = yixun;
+			name = yixunPref;
 			productInstallPath = "$(HOME)/Library/PreferencePanes";
 			productName = yixun;
 			productReference = 8D202CF80486D31800D8A456 /* yixun.prefPane */;
@@ -167,7 +167,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				8D202CE80486D31800D8A456 /* yixun */,
+				8D202CE80486D31800D8A456 /* yixunPref */,
 			);
 		};
 /* End PBXProject section */
@@ -290,7 +290,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		1DBD214808BA80EA00186707 /* Build configuration list for PBXNativeTarget "yixun" */ = {
+		1DBD214808BA80EA00186707 /* Build configuration list for PBXNativeTarget "yixunPref" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				1DBD214908BA80EA00186707 /* Debug */,

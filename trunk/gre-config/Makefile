@@ -24,7 +24,7 @@ PROGS = gre-config
 .PHONY:all
 	all: ${PROGS}
 
-mac-gre: ${OBJS} main.o
+gre-config: ${OBJS} main.o
 	${CC} ${CFLAGS} ${LIBINC} -o $@ main.o ${OBJS} ${LIBS}
 
 install:

@@ -16,11 +16,10 @@
 
 #include <net/route.h> // struct rt_msghdr
 
-#include <ifaddrs.h>
+#include <ifaddrs.h> //getifaddrs() freeifaddrs()
 
 #include <errno.h>
 
-#include <assert.h>
 
 #ifndef inet_itoa
 #define inet_itoa(x) inet_ntoa(*(struct in_addr*)&(x))

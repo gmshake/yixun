@@ -182,7 +182,7 @@
 							<reference key="NSNextResponder" ref="1037298196"/>
 							<int key="NSvFlags">1292</int>
 							<object class="NSPSMatrix" key="NSDrawMatrix"/>
-							<string key="NSFrame">{{323, 187}, {16, 16}}</string>
+							<string key="NSFrame">{{433, 216}, {16, 16}}</string>
 							<reference key="NSSuperview" ref="1037298196"/>
 							<int key="NSpiFlags">20746</int>
 							<double key="NSMinValue">1.600000e+01</double>
@@ -367,6 +367,26 @@
 								<int key="NSPeriodicInterval">25</int>
 							</object>
 						</object>
+						<object class="NSButton" id="625304733">
+							<reference key="NSNextResponder" ref="1037298196"/>
+							<int key="NSvFlags">268</int>
+							<string key="NSFrame">{{317, 173}, {114, 32}}</string>
+							<reference key="NSSuperview" ref="1037298196"/>
+							<bool key="NSEnabled">YES</bool>
+							<object class="NSButtonCell" key="NSCell" id="872476775">
+								<int key="NSCellFlags">67239424</int>
+								<int key="NSCellFlags2">134217728</int>
+								<string key="NSContents">Advanced...</string>
+								<reference key="NSSupport" ref="487881484"/>
+								<reference key="NSControlView" ref="625304733"/>
+								<int key="NSButtonFlags">-2038284033</int>
+								<int key="NSButtonFlags2">129</int>
+								<string key="NSAlternateContents"/>
+								<string key="NSKeyEquivalent"/>
+								<int key="NSPeriodicDelay">200</int>
+								<int key="NSPeriodicInterval">25</int>
+							</object>
+						</object>
 					</object>
 					<string key="NSFrameSize">{579, 276}</string>
 					<reference key="NSSuperview"/>
@@ -534,7 +554,6 @@
 							<reference ref="802323350"/>
 							<reference ref="398407712"/>
 							<reference ref="107839819"/>
-							<reference ref="508480006"/>
 							<reference ref="250977430"/>
 							<reference ref="643543545"/>
 							<reference ref="10494597"/>
@@ -545,6 +564,8 @@
 							<reference ref="967700527"/>
 							<reference ref="151058561"/>
 							<reference ref="650957994"/>
+							<reference ref="508480006"/>
+							<reference ref="625304733"/>
 						</object>
 						<reference key="parent" ref="660800786"/>
 					</object>
@@ -746,6 +767,20 @@
 						<reference key="object" ref="767441714"/>
 						<reference key="parent" ref="151058561"/>
 					</object>
+					<object class="IBObjectRecord">
+						<int key="objectID">213</int>
+						<reference key="object" ref="625304733"/>
+						<object class="NSMutableArray" key="children">
+							<bool key="EncodedWithXMLCoder">YES</bool>
+							<reference ref="872476775"/>
+						</object>
+						<reference key="parent" ref="1037298196"/>
+					</object>
+					<object class="IBObjectRecord">
+						<int key="objectID">214</int>
+						<reference key="object" ref="872476775"/>
+						<reference key="parent" ref="625304733"/>
+					</object>
 				</object>
 			</object>
 			<object class="NSMutableDictionary" key="flattenedProperties">
@@ -787,6 +822,8 @@
 					<string>208.IBPluginDependency</string>
 					<string>209.IBPluginDependency</string>
 					<string>210.IBPluginDependency</string>
+					<string>213.IBPluginDependency</string>
+					<string>214.IBPluginDependency</string>
 					<string>6.IBPluginDependency</string>
 					<string>6.ImportedFromIB2</string>
 					<string>99.IBPluginDependency</string>
@@ -807,11 +844,13 @@
 					<string>com.apple.InterfaceBuilder.CocoaPlugin</string>
 					<string>com.apple.InterfaceBuilder.CocoaPlugin</string>
 					<string>com.apple.InterfaceBuilder.CocoaPlugin</string>
-					<string>{{109, 160}, {579, 276}}</string>
-					<string>{{109, 160}, {579, 276}}</string>
+					<string>{{30, 164}, {579, 276}}</string>
+					<string>{{30, 164}, {579, 276}}</string>
 					<integer value="1" id="5"/>
 					<reference ref="5"/>
 					<string>{224.664, 10}</string>
+					<string>com.apple.InterfaceBuilder.CocoaPlugin</string>
+					<string>com.apple.InterfaceBuilder.CocoaPlugin</string>
 					<string>com.apple.InterfaceBuilder.CocoaPlugin</string>
 					<string>com.apple.InterfaceBuilder.CocoaPlugin</string>
 					<string>com.apple.InterfaceBuilder.CocoaPlugin</string>
@@ -853,7 +892,7 @@
 				</object>
 			</object>
 			<nil key="sourceID"/>
-			<int key="maxID">212</int>
+			<int key="maxID">214</int>
 		</object>
 		<object class="IBClassDescriber" key="IBDocument.Classes">
 			<object class="NSMutableArray" key="referencedPartialClassDescriptions">
@@ -964,7 +1003,7 @@
 			</object>
 		</object>
 		<int key="IBDocument.localizationMode">0</int>
-		<string key="IBDocument.LastKnownRelativeProjectPath">../yixun.xcodeproj</string>
+		<string key="IBDocument.LastKnownRelativeProjectPath">../yixunPref.xcodeproj</string>
 		<int key="IBDocument.defaultPropertyAccessControl">3</int>
 	</data>
 </archive>
