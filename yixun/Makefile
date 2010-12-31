@@ -19,7 +19,7 @@ LIBS = -liconv -lpthread
 CFLAGS += ${INC}
 CCFLAGS += ${INC}
 
-OBJS = common_logs.o radius.o convert_code.o encode_password.o get_ip_mac.o login_state.o print_hex.o
+OBJS = common_logs.o radius.o convert_code.o encode_password.o get_ip_mac.o login_state.o print_hex.o ../route/route_op.o
 
 PROGS = yixun
 
