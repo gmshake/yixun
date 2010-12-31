@@ -17,7 +17,7 @@ LIBS =
 CFLAGS += ${INC}
 CCFLAGS += ${INC}
 
-OBJS = 
+OBJS = ../route/route_op.o
 
 PROGS = gre-config
 

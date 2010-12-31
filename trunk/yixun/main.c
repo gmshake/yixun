@@ -12,6 +12,7 @@
 #include "radius.h"
 #include "common_macro.h"
 #include "common_logs.h"
+#include "../route/route_op.h"
 
 #define LOCKFILE "/var/tmp/yixun.pid"        /* 锁文件 */
 static int lockfd; // lockfile file description
@@ -25,6 +26,8 @@ static char *progname;
 static int log_opened = 0;
 static int connected = 0;
 static int flag_gre_if_isset = 0;
+
+static in_addr_t default_route = 0;
 
 //static char * interface;
 static char * username;
@@ -300,7 +303,13 @@ static int gre_if_op(int flag, in_addr_t src, in_addr_t dst, in_addr_t local, in
     }
 
     if (flag & FLAG_CROUTE) {
-        strcat(cmd, " -C210.37.152.1 ");
+        if (default_route == 0) {
+            in_addr_t dst = 0, mask = 0;
+            if (route_get(&dst, &mask, &default_route, NULL) < 0)
+                return -1;
+        }
+        sprintf(tmp, " -C%s ", inet_itoa(default_route));
+        strcat(cmd, tmp);
         strcat(cmd, inet_itoa(auth_server_addr));
         if (msg_server_addr != 0) {
             strcat(cmd, " ");
