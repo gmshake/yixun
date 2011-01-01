@@ -242,12 +242,6 @@ void parse_args(int argc, char * const argv[])
                 exit(-2);
             }
         }
-/*        
-        if (interface == NULL)
-        {
-            fprintf(stderr, "Caution: use first usable interface\n");
-        }
-*/
     }
 }
 
@@ -310,10 +304,15 @@ static int gre_if_op(int flag, in_addr_t src, in_addr_t dst, in_addr_t local, in
         }
         sprintf(tmp, " -C%s ", inet_itoa(default_route));
         strcat(cmd, tmp);
+        
         strcat(cmd, inet_itoa(auth_server_addr));
         if (msg_server_addr != 0) {
             strcat(cmd, " ");
             strcat(cmd, inet_itoa(msg_server_addr));
+            if (msg_server_addr != dst) {
+                strcat(cmd, " ");
+                strcat(cmd, sdst);
+            }
         }
         
         int i;
@@ -326,7 +325,9 @@ static int gre_if_op(int flag, in_addr_t src, in_addr_t dst, in_addr_t local, in
             strncat(cmd, argv[i], remain - 1);
         }
     }
-    printf("cmd:%s\n", cmd);
+#ifdef DEBUG
+    fprintf(stderr, "cmd:%s\n", cmd);
+#endif
     return system(cmd);
 }
 

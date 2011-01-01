@@ -12,6 +12,21 @@
 #include <stdint.h>
 #include <netinet/in.h>
 
+struct yixun_msg {
+    /* in parameters */
+    const char *username;
+    const char *password;
+    const char *serverip;
+    const char *clientip;
+    const char *mac;
+    /* out parameters */
+    in_addr_t gre_src;
+    in_addr_t gre_dst;
+    in_addr_t gre_local;
+    in_addr_t gre_remote;
+    in_addr_t gre_netmask;
+    /* internal use */
+}
 
 extern in_addr_t gre_src, gre_dst, gre_local, gre_remote, net_mask;  //out parameters
 extern in_addr_t auth_server_addr, msg_server_addr;
@@ -28,7 +43,5 @@ extern int send_keep_alive();
 extern int start_listen();
 extern int stop_listen();
 extern int accept_client();
-
-
 
 #endif // _RADIUS_H

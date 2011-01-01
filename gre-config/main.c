@@ -17,7 +17,6 @@
 #include <errno.h>
 
 #include "../route/route_op.h"
-#include <assert.h>
 
 #ifndef inet_itoa
 #define inet_itoa(x) inet_ntoa(*(struct in_addr*)&(x))
@@ -97,42 +96,42 @@ int main (int argc, char * const argv[])
         }
         
         if (flag_changeroute) {
-            tmp_dst = rt_list->dst; tmp_mask = rt_list->mask; tmp_gateway = 0;
             struct rt_list *p = rt_list;
             while (rt_list) {
-                if (route_get(&tmp_dst, &tmp_mask, &tmp_gateway, ifp) == 0 && tmp_dst != 0 && tmp_mask != 0)
-                    route_add(rt_list->dst, rt_list->mask, gateway, gateway ? NULL : ifp);
+                tmp_dst = rt_list->dst; tmp_mask = rt_list->mask; tmp_gateway = 0;
+                int err = route_get(&tmp_dst, &tmp_mask, &tmp_gateway, ifp);
+                if (err || (err == 0 && tmp_dst == 0 && tmp_mask == 0))
+                    route_add(rt_list->dst, rt_list->mask, gateway ? gateway : tmp_gateway, tmp_gateway ? NULL : ifp);
+
                 p = rt_list->next;
                 free(rt_list);
                 rt_list = p;
             }
             
-            tmp_dst = dst; tmp_mask = 0xffffffff; tmp_gateway = 0;
-            if (route_get(&tmp_dst, &tmp_mask, &tmp_gateway, ifp) == 0 && tmp_dst == 0 && tmp_mask == 0)
-                route_add(dst, 0xffffffff, gateway, gateway ? NULL : ifp);
-             
-            route_delete(0, 0xffffffff);
+            route_change(0, 0, remote, ifname);
+            /*
+            route_delete(0, 0);
             route_add(0, 0, remote, ifname);
+             */
         }
     } else {
         if (remove_gre_if(src, dst, local, remote) < 0)
             return -1;
 
         if (flag_changeroute) {
-            tmp_dst = dst; tmp_mask = 0xffffffff; tmp_gateway = 0;
-            if (route_get(&tmp_dst, &tmp_mask, &tmp_gateway, ifp) == 0) {
-                if (tmp_dst == dst && tmp_mask == 0xffffffff)
-                    route_delete(dst, 0xffffffff);
-                
-                route_add(0, 0, gateway, gateway ? NULL : ifp);
-            } else {
-                fprintf(stderr, "route_get: error get ori gateway\n");
-                return -2;
+            if (gateway)
+                route_add(0, 0, gateway, NULL);
+            else {
+                tmp_dst = dst; tmp_mask = 0xffffffff; tmp_gateway = 0;
+                if (route_get(&tmp_dst, &tmp_mask, &tmp_gateway, ifp) == 0)
+                    route_add(0, 0, tmp_gateway, tmp_gateway ? NULL : ifp);
+                else
+                    fprintf(stderr, "route_get: error get ori gateway\n");
             }
             
             struct rt_list *p = rt_list;
             while (rt_list) {
-                tmp_dst = rt_list->dst; tmp_mask = rt_list->mask; //tmp_gateway = 0;
+                tmp_dst = rt_list->dst; tmp_mask = rt_list->mask;
                 if (route_get(&tmp_dst, &tmp_mask, NULL, NULL) == 0) {
                     if (tmp_dst == rt_list->dst && tmp_mask == rt_list->mask)
                         route_delete(rt_list->dst, rt_list->mask);
