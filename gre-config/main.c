@@ -17,7 +17,7 @@
 #include <errno.h>
 
 #include "../route/route_op.h"
-
+#include <assert.h>
 
 #ifndef inet_itoa
 #define inet_itoa(x) inet_ntoa(*(struct in_addr*)&(x))
@@ -84,15 +84,15 @@ int main (int argc, char * const argv[])
             fprintf(stderr, "add_gre_if: error set address of %s\n", ifname);
             return -1;
         }
-        
+
         /*
          * hack: if tunnel remote is the same as tunnel interface dst, as we have no 
          * opportunity to access route directly(Apple has not addressed it to the developer)
          * , we delete the loopback route. 
          */
         if (remote == dst) {
-            tmp_dst = remote; tmp_mask = 0xffffffff; tmp_gateway = 0;
-            if (route_get(&tmp_dst, &tmp_mask, &tmp_gateway, ifp) == 0 && strcmp(ifname, ifp) == 0)
+            tmp_dst = remote; tmp_mask = 0xffffffff;
+            if (route_get(&tmp_dst, &tmp_mask, NULL, NULL) == 0 && tmp_dst == remote && tmp_mask == 0xffffffff)
                 route_delete(remote, 0xffffffff);
         }
         
