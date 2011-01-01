@@ -10,16 +10,16 @@ BOOL settingChanged = NO;
 NSTimer *keepalive_timer = nil;
 NSThread *mlistenThread = nil;
 
+struct yixun_msg msg;
+
 @implementation yiXunGUI
 - (IBAction)aExit:(id)sender {
     [self terminalExternalProcess];
-	if (log_out() < 0)
-	{
+	if (log_out(&msg) < 0) {
 		dprint_info();
 	}
     
-    if (mlistenThread != nil)
-    {
+    if (mlistenThread != nil) {
         [mlistenThread cancel];
         [mlistenThread release];
         mlistenThread = nil;
@@ -28,8 +28,7 @@ NSThread *mlistenThread = nil;
 
     [self changeUIState];
 	dprint_info();
-    if (keepalive_timer != nil)
-    {
+    if (keepalive_timer != nil) {
         [keepalive_timer invalidate];
         keepalive_timer = nil;
     }
@@ -37,21 +36,18 @@ NSThread *mlistenThread = nil;
 
 - (IBAction)aLogin:(id)sender {
     [self settingSave];
-	if (set_config([[mUsername stringValue] UTF8String], \
-                   [[mPassword stringValue] UTF8String], \
-                   [[mServerIP stringValue] UTF8String], \
-                   [[mClientIP stringValue] UTF8String], \
-                   [[mMAC stringValue] UTF8String]) != 0)
-	{
-		dprint_info();
-		return;
-	}
-    [self changeUIState];
+	[self changeUIState];
+    
+    msg.username = [[mUsername stringValue] UTF8String];
+    msg.password = [[mPassword stringValue] UTF8String];
+    msg.serverip = [[mServerIP stringValue] UTF8String];
+    msg.clientip = [[mClientIP stringValue] UTF8String];
+    msg.mac = [[mMAC stringValue] UTF8String];
     
     int retry_count = 2;
     do
     {
-        int rval = log_in();
+        int rval = log_in(&msg);
         [self changeUIState];
         dprint_info();
         
@@ -63,7 +59,7 @@ NSThread *mlistenThread = nil;
                                                          object:nil];
             [mlistenThread start];
             
-            keepalive_timer = [NSTimer scheduledTimerWithTimeInterval: timeout
+            keepalive_timer = [NSTimer scheduledTimerWithTimeInterval: msg.timeout
                                                      target: self
                                                    selector: @selector(keepalive:)
                                                    userInfo: nil
@@ -246,14 +242,14 @@ NSThread *mlistenThread = nil;
     NSMutableArray *arguments=[[NSMutableArray alloc] init];
 
     [arguments addObject:@"-D"];
-    [arguments addObject:[NSString stringWithFormat:@"%s %s", "-l", inet_itoa(clientip)]];
-    [arguments addObject:[NSString stringWithFormat:@"%s %s", "-r", inet_itoa(gre_remote)]];
-    [arguments addObject:[NSString stringWithFormat:@"%s %s", "-s", inet_itoa(clientip)]];
-    [arguments addObject:[NSString stringWithFormat:@"%s %s", "-d", inet_itoa(gre_dst)]];
-    [arguments addObject:[NSString stringWithFormat:@"%s %s", "-n", inet_itoa(net_mask)]];
+    [arguments addObject:[NSString stringWithFormat:@"%s %s", "-l", inet_itoa(msg.gre_local)]];
+    [arguments addObject:[NSString stringWithFormat:@"%s %s", "-r", inet_itoa(msg.gre_remote)]];
+    [arguments addObject:[NSString stringWithFormat:@"%s %s", "-s", inet_itoa(msg.gre_src)]];
+    [arguments addObject:[NSString stringWithFormat:@"%s %s", "-d", inet_itoa(msg.gre_dst)]];
+    [arguments addObject:[NSString stringWithFormat:@"%s %s", "-n", inet_itoa(msg.gre_netmask)]];
     
 	[task setStandardOutput:pipe];
-	[task setLaunchPath:@"/usr/local/bin/mac-gre"];
+	[task setLaunchPath:@"/usr/local/bin/gre-config"];
 	[task setArguments:arguments];
 	[task launch];
 
@@ -297,19 +293,18 @@ NSThread *mlistenThread = nil;
 
 - (void)listenThread: (id)arg
 {
-    while(1)
-    {
-        accept_client();
+    while(1) {
+        accept_client(&msg);
     }
 }
 
 - (void)keepalive: (NSTimer *) timer
 {
     DNSLog(@"Send keep-alive packet");
-    if (send_keep_alive() < 0) // error when sending keep-alive package
+    if (keep_alive(&msg) < 0) // error when sending keep-alive package
     {
         sleep(1);
-        if (send_keep_alive() < 0)
+        if (keep_alive(&msg) < 0)
         {
             [self aExit:NULL];
             if ([mAutoReconnect intValue])

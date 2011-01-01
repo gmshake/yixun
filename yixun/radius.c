@@ -1,8 +1,8 @@
 /*
- *  Radius.c
+ *  radius.c
  *  YiXun
  *
- *  Created by Summer Town on 9/14/10.
+ *  Created by Summer Town on 1/1/11.
  *  Copyright 2010 __MyCompanyName__. All rights reserved.
  *
  */
@@ -32,382 +32,259 @@
 #include "convert_code.h"
 #include "encode_password.h"
 #include "get_ip_mac.h"
+#include "radius.h"
 
-#include "print_hex.h" // for debug
-//#include "listen_thread.h"
-#include "login_state.h"
-
-#ifndef RDS_PACKET_LEN
-#define RDS_PACKET_LEN(p) (ntohs((p)->length) + 8)
+#ifdef DEBUG
+#include "print_hex.h"
 #endif
-
-in_addr_t gre_src, gre_dst, gre_local, gre_remote, gateway_ip, net_mask;  //out parameters
-uint32_t timeout, upload_band, download_band;		// out
-
-unsigned auth_server_maskbits = 0; // Auth server netmask bits
-in_addr_t auth_server_addr = 0, msg_server_addr = 0;  // Auth server ip, msg server ip
-
-int start_listen();
-int stop_listen();
-int accept_client();
-
-static int sockListen;
-static int is_listening;
-
-static char uname[MAX_USER_NAME_LEN];	// user name
-static char pwd[MAX_PWD_LEN];			// user pwd
-static uint8_t eth_addr[6];				// Ethernet address
-
-static struct sockaddr_in auth_server;  //radius server 10.0.100.2
 
 const static uint8_t version[4] = {0x03, 0x00, 0x00, 0x06};
 const static uint8_t padding[4] = {0x00, 0x00, 0x00, 0x00};
 
-static int settingChanged = 0;
-static int opt_clientip = 0;
-static int opt_lladdr = 0;
+static int sockListen;
+static int is_listening;
 
+/*
+
+int log_in(struct yixun_msg *msg);
+int log_out(struct yixun_msg *msg);
+int keep_alive(struct yixun_msg *msg);
+
+int start_listen();
+int stop_listen();
+int accept_client();
+*/
+void print_yixun_msg(struct yixun_msg *msg);
+
+static int pre_config(struct yixun_msg *msg);
+static int yixun_log_op(int op, struct yixun_msg *msg);
 static int get_server_info(void *buff);
-static int do_with_server_info(uint8_t buff[], int sockfd);  //返回0表示无错，返回正数，表示出错原因(e_user, e_pwd ....)
-static rds_packet * make_rds_packet(enum rds_head_type tp);  //生成一个发送包（包头）
-static void free_rds_packet(rds_packet *);	//释放内存
+static int do_with_server_info(char buff[], struct yixun_msg *msg, int sockfd);  //返回0表示无错，返回正数，表示出错原因(e_user, e_pwd ....)
+static int get_parameters(char *buff, struct yixun_msg *msg); //认证通过后，获取接入服务器给的参数
 
-static void add_segment(rds_packet *p, enum segment_type type, uint16_t length, \
-						uint16_t content_len, const uint8_t *content); //为发送包添加相应字段
-static void make_send_buff(void *buff, rds_packet *p);	//将生成的发送包内容放到发送缓冲区
+static struct rds_packet_header * make_rds_packet(char packet[], enum rds_header_type type); //生成一个发送包（包头）
 
-static int get_parameters(uint8_t *buff, \
-						  in_addr_t *gre_dst, in_addr_t *gre_remote, in_addr_t *gateway_ip, in_addr_t *net_mask, \
-						  uint32_t *timeout, uint32_t *upload_band, uint32_t *download_band); //认证通过后，获取接入服务器给的参数
+//为发送包添加相应字段
+static void add_segment(char packet[], enum rds_segment_type type, uint8_t length, uint8_t content_len, const char *content);
 
+
+// 带连接超时的connect
 static int connect_tm(int socket, \
                       const struct sockaddr *addr,
                       socklen_t addr_len, \
-                      struct timeval *timeout); // 带有超时的connect
+                      struct timeval *timeout);
 
 
-//int set_config(const char *ifname, const char *username, const char *password)
-//int set_config(const char *username, const char *password, const char *ipaddr, const char *lladdr)
-int set_config(const char *username, const char *password, const char *sip, const char *cip, const char *mac)
-{ 
-    //if (username == NULL || password == NULL) return -1;
-    if (username == NULL) return -1;
-	
-	if (strcmp(username, uname) != 0)
-    {
-        strncpy(uname, username, sizeof(uname)); uname[sizeof(uname) - 1] = '\0'; // 保存用户名
-        settingChanged = -1;
-    }
-    if (password != NULL && strcmp(password, pwd) != 0)
-    {
-        strncpy(pwd, password, sizeof(pwd)); pwd[sizeof(pwd) - 1] = '\0';	// 保存密码
-        settingChanged = -1;
+static int pre_config(struct yixun_msg *msg)
+{
+    if (msg->username == NULL)
+        return -1;
+    
+    if (msg->clientip) {
+        msg->gre_src = inet_addr(msg->clientip);
+        if (msg->gre_src == 0 || msg->gre_src == 0xffffffff)
+            log_err("[%s] Invalid ip address:%s\n", __FUNCTION__, msg->clientip);
     }
     
-    if (cip != NULL)
-    {
-        gre_src = inet_addr(cip);
-        if (gre_src != (in_addr_t)0 && gre_src != (in_addr_t)-1)
-            opt_clientip = -1;
-        else
-            log_err("[set_config] Invalid ip address:%s\n", gre_src);
+    if (msg->mac) {
+        if (string_to_lladdr(msg->eth_addr, msg->mac) < 0)
+            log_err("[%s] Invalid lladdr:%s\n", __FUNCTION__, msg->mac);
     }
     
-    if (mac != NULL)
-    {
-        opt_lladdr = string_to_lladdr(eth_addr, mac);
-        if (opt_lladdr == 0) log_err("[set_config] Invalid lladdr:%s\n", mac);
-    }
-    
-    bzero(&auth_server, sizeof(auth_server));
-    auth_server.sin_family = AF_INET;
-    auth_server.sin_port = htons(RADIUS_PORT);
-    
-    if (sip != NULL)
-    {
+    if (msg->serverip) {
         char tmp[64];
-        strncpy(tmp, sip, sizeof(tmp));
+        strncpy(tmp, msg->serverip, sizeof(tmp));
         tmp[sizeof(tmp) - 1] = '\0';
         char * args[2] = {NULL};
         char *instr = tmp;
         args[0] = strsep(&instr, "/");
         args[1] = strsep(&instr, "/");
-        auth_server.sin_addr.s_addr = inet_addr(sip);
-        if (args[1] != NULL)
-        {
-            sscanf(args[1], "%u", &auth_server_maskbits);
-            if (auth_server_maskbits > 32) auth_server_maskbits = 32;
+        msg->auth_server = inet_addr(args[0]);
+        if (args[1] != NULL) {
+            sscanf(args[1], "%u", &msg->auth_server_maskbits);
+            if (msg->auth_server_maskbits > 32)
+                msg->auth_server_maskbits = 32;
         }
-    }
-    else
-    {
-        auth_server.sin_addr.s_addr = inet_addr(AUTH_SERVER);
-        auth_server_maskbits = AUTH_SERVER_MASKBITS;
+    } else {
+        msg->auth_server = inet_addr(AUTH_SERVER);
+        msg->auth_server_maskbits = AUTH_SERVER_MASKBITS;
     }
     
-    auth_server_addr = auth_server.sin_addr.s_addr;
-/*
-    auth_server_addrs = ntohl(auth_server.sin_addr.s_addr);
-    auth_server_addrs &=  ~((1 << (32 - auth_server_maskbits)) - 1);
-    auth_server_addrs = htonl(auth_server_addrs);
-*/    
-    /*
-    if (inet_pton(AF_INET, AUTH_SERVER, &auth_server.sin_addr) <= 0)
-    {
-        log_perror("[set_config]:%s\n", AUTH_SERVER);
-        return -4;
-    }
-	*/
     return 0;
 }
 
-int log_in()
+
+#define LOGIN 0x01
+#define LOGOUT 0x02
+#define KEEPALIVE 0x03
+static int yixun_log_op(int op, struct yixun_msg *msg)
 {
-    int rval = -1;
-    set_login_state(connecting);
-	static uint8_t s_buff[S_BUF_LEN];
-	static size_t len;
-	int sockfd = socket(AF_INET, SOCK_STREAM, 0);
-	if (sockfd < 0)
-    {
-        log_perror("[log_in] socket");
-        goto ERROR;
+    /* 重置发送缓冲区信息 */
+    static int lastop = 0;
+    if (op != lastop) {
+        lastop = op;
+        msg->make_send_buff_done = 0;
+        bzero(msg->s_buff, sizeof(msg->s_buff));
+    }
+    
+    if (!msg->pre_config_done) {
+        if (pre_config(msg) < 0)
+            return -1;
+        msg->pre_config_done = -1;
+    }
+    
+    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	if (sockfd < 0) {
+        log_perror("[%s] socket", __FUNCTION__);
+        return -1;
     }
     
     struct timeval tv;
     tv.tv_sec = CONNECTION_TIME_OUT;
     tv.tv_usec = 0;
     
-    if (connect_tm(sockfd, (struct sockaddr *)&auth_server, sizeof(struct sockaddr_in), &tv) < 0)
-    {
-        log_perror("[log_in] connect %s", inet_ntoa(auth_server.sin_addr));
+    struct sockaddr_in auth_server;
+    bzero(&auth_server, sizeof(struct sockaddr_in));
+    auth_server.sin_family = AF_INET;
+    auth_server.sin_port = htons(RADIUS_PORT);
+    auth_server.sin_addr.s_addr = msg->auth_server;
+    
+    if (connect_tm(sockfd, (struct sockaddr *)&auth_server, sizeof(struct sockaddr_in), &tv) < 0) {
+        log_perror("[%s] connect %s", __FUNCTION__, inet_ntoa(auth_server.sin_addr));
         goto ERROR;
-    }
-	
-	if (settingChanged)
-	{
-        if (get_ip_mac_by_socket(sockfd, &gre_local, opt_lladdr ? NULL : eth_addr) < 0) {
-            log_err("[log_in] get ip address and eth_addr");
+    }      
+
+    if (!msg->make_send_buff_done) {
+        if (get_ip_mac_by_socket(sockfd, &msg->gre_local, msg->mac ? NULL : msg->eth_addr) < 0) {
+            log_err("[%s] get ip address and eth_addr", __FUNCTION__);
             goto ERROR;
         }
-        if (!opt_clientip)
-            gre_src = gre_local;
-		
-        uint8_t *sec_pwd = (uint8_t *)malloc(sizeof(uint8_t) * (strlen(pwd) + 2));
-		encode_pwd_with_ip(sec_pwd, pwd, gre_src);
-
-		rds_packet *packet = make_rds_packet(u_login);
-
-		add_segment(packet,  c_mac, 6, 6, eth_addr);
-		add_segment(packet,  c_ip, 4, 4, (uint8_t *)&gre_src);
-		add_segment(packet,  c_user, MAX_USER_NAME_LEN, strlen(uname), (uint8_t *)uname); //***Hack,用户名最长为20***
-		add_segment(packet,  c_pwd, strlen((char *)sec_pwd), strlen((char *)sec_pwd), sec_pwd);
-		add_segment(packet,  c_ver, 4,4, version);
-		add_segment(packet,  c_pad, 4,4, padding);
-		
-		free(sec_pwd);
-		
-		len = RDS_PACKET_LEN(packet);
-		
-		make_send_buff(s_buff, packet);
-		free_rds_packet(packet);
-		
-		settingChanged = 0;
+        if (msg->clientip == NULL || msg->gre_src == 0 || msg->gre_src == 0xffffffff)
+            msg->gre_src = msg->gre_local;
+        
+        switch (op) {
+            case LOGIN:
+            {
+                uint8_t *sec_pwd = (uint8_t *)malloc(sizeof(uint8_t) * (strlen(msg->password) + 2));
+                encode_pwd_with_ip(sec_pwd, msg->password, msg->gre_src);
+                
+                make_rds_packet(msg->s_buff, u_login);
+                add_segment(msg->s_buff,  c_mac, 6, sizeof(msg->eth_addr), (char *)msg->eth_addr);
+                add_segment(msg->s_buff,  c_ip, sizeof(in_addr_t), sizeof(in_addr_t), (char *)&msg->gre_src);
+                add_segment(msg->s_buff,  c_user, MAX_USER_NAME_LEN, strlen(msg->username), (char *)msg->username); //Hack:用户名有长度限制
+                add_segment(msg->s_buff,  c_pwd, strlen((char *)sec_pwd), strlen((char *)sec_pwd), (char *)sec_pwd);
+                add_segment(msg->s_buff,  c_ver, 4, sizeof(version), (char *)version);
+                add_segment(msg->s_buff,  c_pad, 4, sizeof(padding), (char *)padding);
+                
+                free(sec_pwd);
+                
+                msg->s_buff_len = ntohs(((struct rds_packet_header *)msg->s_buff)->length) + sizeof(struct rds_packet_header);
+            }
+                break;
+            case LOGOUT:
+                make_rds_packet(msg->s_buff, u_logout); //Hack:退出登录和保持活动连接只有这一个地方有差别
+                add_segment(msg->s_buff, c_ip, sizeof(in_addr_t), sizeof(in_addr_t), (char *)&msg->gre_src);
+                add_segment(msg->s_buff, c_user, MAX_USER_NAME_LEN, strlen(msg->username), (char *)msg->username);
+                msg->s_buff_len = ntohs(((struct rds_packet_header *)msg->s_buff)->length) + sizeof(struct rds_packet_header);
+                break;
+            case KEEPALIVE:
+                make_rds_packet(msg->s_buff, u_keepalive);
+                add_segment(msg->s_buff, c_ip, sizeof(in_addr_t), sizeof(in_addr_t), (char *)&msg->gre_src);
+                add_segment(msg->s_buff, c_user, MAX_USER_NAME_LEN, strlen(msg->username), (char *)msg->username);
+                msg->s_buff_len = ntohs(((struct rds_packet_header *)msg->s_buff)->length) + sizeof(struct rds_packet_header);
+                break;
+            default:
+                log_err("[%s] unkown op %d", __FUNCTION__, op);
+                goto ERROR;
+                break;
+        }
+        msg->make_send_buff_done = -1;
     }
-    
     
     tv.tv_sec = SND_RCV_TIME_OUT;
     tv.tv_usec = 0;
     if (setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) < 0) {
-        log_perror("[log_in] setsockopt");
+        log_perror("[%s] setsockopt", __FUNCTION__);
         goto ERROR;
     }
     tv.tv_sec = SND_RCV_TIME_OUT;
     tv.tv_usec = 0;
     if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
-        log_perror("[log_in] setsockopt");
+        log_perror("[%s] setsockopt", __FUNCTION__);
         goto ERROR;
     }
     
-    int ret = send(sockfd, s_buff, len, 0);
-
-    if (ret < 0)
-    {
-        log_perror("[log_in] send to %s", inet_ntoa(auth_server.sin_addr));
+    if (send(sockfd, msg->s_buff, msg->s_buff_len, 0) < 0) {
+        log_perror("[%s] send to %s", __FUNCTION__, inet_ntoa(auth_server.sin_addr));
         goto ERROR;
     }
 	
-	uint8_t r_buff[R_BUF_LEN];
-
-    ret = recv(sockfd, r_buff, R_BUF_LEN, 0);
-    if (ret > 0)
-    {
-        rval = do_with_server_info(r_buff, sockfd);
-        if (rval != 0)
+    switch (op) {
+        case LOGIN:
+        {
+            char r_buff[R_BUF_LEN];
+            
+            int ret = recv(sockfd, r_buff, R_BUF_LEN, 0);
+            if (ret > 0) {
+                if (do_with_server_info(r_buff, msg, sockfd) != 0)
+                    goto ERROR;
+            } else {
+                if (ret == 0)
+                    log_err("[%s] receive: Auth server %s has closed its half side of the connection\n", __FUNCTION__, inet_ntoa(auth_server.sin_addr));
+                else
+                    log_perror("[%s] receive", __FUNCTION__);
+                
+                goto ERROR;
+            }
+        }
+            break;
+        case LOGOUT:
+            break;
+        case KEEPALIVE:
+            
+            break;
+        default:
+            log_err("[%s] unkown op %d", __FUNCTION__, op);
             goto ERROR;
-    }
-    else
-    {
-		if (ret == 0)
-			log_err("[log_in] receive: Auth server %s has closed its half side of the connection\n", inet_ntoa(auth_server.sin_addr));
-		else
-			log_perror("[log_in] receive");
-        
-		goto ERROR;
+            break;
     }
     
-    set_login_state(connected);
+    close(sockfd);
     return 0;
 ERROR:
-    set_login_state(not_login);
+    close(sockfd);
+    return -2;
+}
+
+
+int log_in(struct yixun_msg *msg)
+{
+    int rval = yixun_log_op(LOGIN, msg);
+    if (rval == 0)
+        print_yixun_msg(msg);
     return rval;
 }
 
-
-int send_keep_alive()
+int log_out(struct yixun_msg *msg)
 {
-	static uint8_t s_buff[S_BUF_LEN];
-	
-	int sockfd = socket(AF_INET, SOCK_STREAM, 0);
-	if (sockfd < 0)
-    {
-        log_perror("[send_keep_alive] create socket");
-        goto ERROR;
-    }
-    
-    struct timeval tv;
-    tv.tv_sec = CONNECTION_TIME_OUT;
-    tv.tv_usec = 0;
-    
-    if (connect_tm(sockfd, (struct sockaddr *)&auth_server, sizeof(struct sockaddr_in), &tv) < 0)
-    {
-        log_perror("[send_keep_alive] connect %s", inet_ntoa(auth_server.sin_addr));
-        goto ERROR;
-    }
-	
-	if(s_buff[0] == 0) //因为这个发送包的内容是固定的，因此没有必要每次都重新再做这个包
-	{
-        if (get_ip_mac_by_socket(sockfd, &gre_local, opt_lladdr ? NULL : eth_addr) < 0) {
-            log_err("[send_keep_alive] get ip address and eth_addr");
-            goto ERROR;
-        }
-        if (!opt_clientip)
-            gre_src = gre_local;
-        
-		rds_packet *packet = make_rds_packet(u_keepalive);
-		
-		add_segment(packet, c_ip, 4, 4, (uint8_t *)&gre_src);
-		add_segment(packet, c_user, MAX_USER_NAME_LEN, strlen(uname), (uint8_t *)uname); //***Hack,用户名最长为20***
-
-		make_send_buff(s_buff, packet);
-		free_rds_packet(packet);
-	}
-	
-    tv.tv_sec = SND_RCV_TIME_OUT;
-    tv.tv_usec = 0;
-    if (setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) < 0) {
-        log_perror("[log_in] setsockopt");
-        goto ERROR;
-    }
-    tv.tv_sec = SND_RCV_TIME_OUT;
-    tv.tv_usec = 0;
-    if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
-        log_perror("[log_in] setsockopt");
-        goto ERROR;
-    }
-    
-    if (send(sockfd, s_buff, sizeof(s_buff), 0) < 0) // Hack:发送包是固定的512字节
-    {
-        log_perror("[send_keep_alive] send");
-        goto ERROR;
-    }
-	
-    return 0;
-ERROR:
-    set_login_state(not_login);
-    return -1;
+    return yixun_log_op(LOGOUT, msg);
 }
 
-
-int log_out()
+int keep_alive(struct yixun_msg *msg)
 {
-	static uint8_t s_buff[S_BUF_LEN];
-	
-	int sockfd = socket(AF_INET, SOCK_STREAM, 0);
-	if (sockfd < 0)
-    {
-        log_perror("[log_out] create socket");
-        goto ERROR;
-    }
-    
-    struct timeval tv;
-    tv.tv_sec = CONNECTION_TIME_OUT;
-    tv.tv_usec = 0;
-    
-    if (connect_tm(sockfd, (struct sockaddr *)&auth_server, sizeof(struct sockaddr_in), &tv) < 0)
-    {
-        log_perror("[log_out] connect");
-        goto ERROR;
-    }
-	
-	if(s_buff[0] == 0) //因为这个发送包的内容是固定的，因此没有必要每次都重新再做这个包
-	{
-        if (get_ip_mac_by_socket(sockfd, &gre_local, opt_lladdr ? NULL : eth_addr) < 0) {
-            log_err("[log_out] get ip address and eth_addr");
-            goto ERROR;
-        }
-        if (!opt_clientip)
-            gre_src = gre_local;
-        
-		rds_packet *packet = make_rds_packet(u_logout); //Hack:退出登录和保持活动连接只有这一个地方有差别
-		
-		add_segment(packet, c_ip, 4, 4, (uint8_t *)&gre_src);
-		add_segment(packet, c_user, MAX_USER_NAME_LEN, strlen(uname), (uint8_t *)uname); //***Hack,用户名最长为20***
-		
-		make_send_buff(s_buff, packet);
-		free_rds_packet(packet);
-	}
-	
-    tv.tv_sec = SND_RCV_TIME_OUT;
-    tv.tv_usec = 0;
-    if (setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) < 0) {
-        log_perror("[log_in] setsockopt");
-        goto ERROR;
-    }
-    tv.tv_sec = SND_RCV_TIME_OUT;
-    tv.tv_usec = 0;
-    if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
-        log_perror("[log_in] setsockopt");
-        goto ERROR;
-    }
-    
-    if (send(sockfd, s_buff, sizeof(s_buff), 0) < 0) // Hack:发送包是固定的512字节
-    {
-        log_perror("[log_out] send");
-        goto ERROR;
-    }
-
-    stop_listen();
-    set_login_state(not_login);
-    return 0;
-ERROR:
-    stop_listen();
-    set_login_state(not_login);
-    return -1;
+    return yixun_log_op(KEEPALIVE, msg);
 }
 
 int start_listen()
 {
-	if (is_listening) return sockListen;
-	if ((sockListen = socket(AF_INET, SOCK_STREAM, 0)) < 0)
-	{
+    if (is_listening) return sockListen;
+	if ((sockListen = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
 		log_perror("[start_listen] socket");
 		return -1;
 	}
 	
 	int opt = 1;
-	if (setsockopt(sockListen, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0)
-	{
+	if (setsockopt(sockListen, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
 		log_perror("[start_listen] setsockopt");
 		goto ERROR;
 	}
@@ -418,14 +295,12 @@ int start_listen()
 	local.sin_family = AF_INET;
 	local.sin_port = htons(RADIUS_PORT);
 	
-	if (bind(sockListen, (struct sockaddr *)&local, sizeof(local)) != 0)
-	{
+	if (bind(sockListen, (struct sockaddr *)&local, sizeof(local)) != 0) {
 		log_perror("[start_listen] Bind");
 		goto ERROR;
 	}
 	
-	if (listen(sockListen, MAX_CLIENT) != 0)
-	{
+	if (listen(sockListen, MAX_CLIENT) != 0) {
 		log_perror("[start_listen] Listen");
 		goto ERROR;
 	}
@@ -439,147 +314,133 @@ ERROR:
 
 int stop_listen()
 {
-	if (!is_listening) return 0;
+    if (!is_listening) return 0;
 	close(sockListen);
 	is_listening = 0;
 	return 0;
 }
 
-inline int accept_client()
+int accept_client(struct yixun_msg *msg)
 {
     static fd_set rfds;
     static struct timeval tv;
-/*	do
-	{
-*/      pthread_testcancel();
+
+    pthread_testcancel();
+
+    tv.tv_sec = 1;
+    tv.tv_usec = 0;
+    FD_ZERO(&rfds);
+    FD_SET(sockListen, &rfds);
+    int cnt = select(sockListen + 1, &rfds, NULL, NULL, &tv);
+    if (cnt <= 0) {
+        if (cnt < 0 && errno != EINTR)
+            log_perror("[%s] select", __FUNCTION__);
+        return 0;
+    }
+    
+    pthread_testcancel();
+    if (FD_ISSET(sockListen, &rfds)) {
+        char r_buff[R_BUF_LEN];
+        struct sockaddr_in r_client;
+        socklen_t len = sizeof(r_client);
+        int sock_client = accept(sockListen, (struct sockaddr *)&r_client, &len);
+        if (sock_client < 0) {
+            log_perror("[%s] accept", __FUNCTION__);
+            return -1;
+        }
         /*
-        tv.tv_sec = 0;
-        tv.tv_usec = 500000; // 0.5 second
-        */
-        tv.tv_sec = 1;
-        tv.tv_usec = 0;
-        FD_ZERO(&rfds);
-        FD_SET(sockListen, &rfds);
-        int cnt = select(sockListen + 1, &rfds, NULL, NULL, &tv);
-        if (cnt <= 0)
-        {
-            if (cnt < 0 && errno != EINTR)
-                log_perror("[accept_client] select");
+         in_addr_t ui = ntohl(r_client.sin_addr.s_addr);
+         ui &= ~((1 << (32 - auth_server_maskbits)) - 1);
+         ui = htonl(ui);
+         */
+        /*
+         if (strcmp(inet_ntoa(r_client.sin_addr), AUTH_SERVER) != 0 && \
+         strcmp(inet_ntoa(r_client.sin_addr), BRAS_SERVER) != 0) // 当对方的IP地址不是服务器IP地址时断开连接（防止攻击）
+         */
+        //if (ui != auth_server_addrs) // 当对方的IP地址不在接入服务器IP地址段时断开连接（防止攻击）
+        if ((ntohl(r_client.sin_addr.s_addr) ^ ntohl(msg->auth_server)) >> (32 - msg->auth_server_maskbits) != 0) {
+            log_notice("[%s]: %s attempt to connect\n", __FUNCTION__, inet_ntoa(r_client.sin_addr));
+            close(sock_client);
             return 0;
         }
         
-        pthread_testcancel();
-        if (FD_ISSET(sockListen, &rfds))
-        {
-            uint8_t r_buff[R_BUF_LEN];
-            struct sockaddr_in r_client;
-            socklen_t len = sizeof(r_client);
-            int sock_client = accept(sockListen, (struct sockaddr *)&r_client, &len);
-            if (sock_client < 0)
-            {
-                log_perror("[accept_client] accept");
-                return -1;
-            }
-/*
-            in_addr_t ui = ntohl(r_client.sin_addr.s_addr);
-            ui &= ~((1 << (32 - auth_server_maskbits)) - 1);
-            ui = htonl(ui);
-*/
-/*
-            if (strcmp(inet_ntoa(r_client.sin_addr), AUTH_SERVER) != 0 && \
-                strcmp(inet_ntoa(r_client.sin_addr), BRAS_SERVER) != 0) // 当对方的IP地址不是服务器IP地址时断开连接（防止攻击）
- */
-            //if (ui != auth_server_addrs) // 当对方的IP地址不在接入服务器IP地址段时断开连接（防止攻击）
-            if ((ntohl(r_client.sin_addr.s_addr) ^ ntohl(auth_server.sin_addr.s_addr)) >> (32 - auth_server_maskbits) != 0)
-            {
-                log_notice("[accept_client]: %s attempt to connect\n", inet_ntoa(r_client.sin_addr));
-                close(sock_client);
-                return 0;
-            }
-            
-            if (msg_server_addr == 0)
-                msg_server_addr = r_client.sin_addr.s_addr;
-            
-            log_info("[accept_client] accept: %s\n", inet_ntoa(r_client.sin_addr));
-
-            tv.tv_sec = 1;
-            tv.tv_usec = 0;
-            if (setsockopt(sock_client, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
-                log_perror("[accept_client] setsockopt");
-            
-            int ret = recv(sock_client, r_buff, R_BUF_LEN, 0);
-            if (ret <= 0)
-            {
-                if (ret == 0)
-                    log_perror("[accept_client] receive: Client %s has closed its half side of the connection\n", inet_ntoa(r_client.sin_addr));
-                else
-                    log_perror("[accept_client] receive");
-                return 0;
-            }
-            ret = do_with_server_info(r_buff, 0);
-            if (ret) close(sock_client);
-
-            //print_info();
+        if (msg->msg_server == 0)
+            msg->msg_server = r_client.sin_addr.s_addr;
+        
+        log_info("[%s] accept: %s\n", __FUNCTION__, inet_ntoa(r_client.sin_addr));
+        
+        tv.tv_sec = 1;
+        tv.tv_usec = 0;
+        if (setsockopt(sock_client, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
+            log_perror("[%s] setsockopt", __FUNCTION__);
+        
+        int ret = recv(sock_client, r_buff, R_BUF_LEN, 0);
+        if (ret <= 0) {
+            if (ret == 0)
+                log_perror("[accept_client] receive: Client %s has closed its half side of the connection\n", inet_ntoa(r_client.sin_addr));
+            else
+                log_perror("[accept_client] receive");
+            return 0;
         }
-//	}while(flag);
+        ret = do_with_server_info(r_buff, msg, 0);
+        if (ret) close(sock_client);
+    }
     return 0;
 }
 
-static int do_with_server_info(uint8_t buff[], int sockfd)
+void print_yixun_msg(struct yixun_msg *msg)
 {
-    rds_packet *hd = (rds_packet *)buff;
-    if (hd->flag != RADIUS_HEADER_FLAG)
-    {
+    struct in_addr a[4];
+    char p1[4][20];
+    
+    a[0].s_addr = msg->gre_src; a[1].s_addr = msg->gre_dst; a[2].s_addr = msg->gre_local; a[3].s_addr = msg->gre_remote; a[4].s_addr = msg->gre_netmask;
+    int i;
+    for (i = 0; i < 5; i++) {
+        strcpy(p1[i], inet_ntoa(a[i]));
+    }
+    
+    log_notice("gre_src:%s gre_dst:%s gre_local:%s gre_remote:%s netmask:%s\n", p1[0], p1[1], p1[2], p1[3], p1[4]);
+    log_notice("timeout:%u upload_band:%u download_band:%u\n", msg->timeout, msg->upload_band, msg->download_band);
+}
+
+static int do_with_server_info(char buff[], struct yixun_msg *msg, int sockfd)
+{
+    struct rds_packet_header *hd = (struct rds_packet_header *)buff;
+    if (hd->flag != RADIUS_HEADER_FLAG) {
         log_err("Error: Invalid server package flag:0x%02x\n", hd->flag);
-        debug_print_hex(buff, 32);
+#ifdef DEBUG
+        print_hex(buff, 32);
+#endif
         return -1;
     }
-    switch (hd->type)
-    {
+    switch (hd->type) {
         case s_accept:
         {
-
             log_info("Server accepted...\n");
             if (start_listen() < 0)
                 return -1;
-
-            rds_packet *packet = make_rds_packet(u_ack);
-            int err = send(sockfd, packet, 8, 0);
-            free_rds_packet(packet);
             
-            if (err < 0)
-            {
-                log_perror("[do_with_server_info] send");
+            char packet[sizeof(struct rds_packet_header)];
+            make_rds_packet(packet, u_ack);
+            if (send(sockfd, packet, sizeof(packet), 0) < 0) {
+                log_perror("[%s] send", __FUNCTION__);
                 stop_listen();
                 return -1;
             }
             
-            accept_client();
- 
-            if (get_parameters(buff, &gre_dst, &gre_remote, &gateway_ip, &net_mask, &timeout, &upload_band, &download_band) < 0)
-            {
-                log_err("[do_with_server_info] Cannot get parameters\n");
+            accept_client(msg);
+            
+            if (get_parameters(buff, msg) < 0) {
+                log_err("[%s] Cannot get parameters", __FUNCTION__);
                 stop_listen();
                 return -1;
             }
-            if (timeout > MAX_TIME_OUT)
-            {
-                log_notice("Server side time out to long:%u\n  use %u instead\n", timeout, MAX_TIME_OUT);
-                timeout = MAX_TIME_OUT;
-            }
-                      
-            struct in_addr a[4];
-            char p1[4][20];
             
-            a[0].s_addr = gre_dst; a[1].s_addr = gre_remote; a[2].s_addr = gateway_ip; a[3].s_addr = net_mask;
-            int i;
-            for (i = 0; i < 4; i++) {
-                strcpy(p1[i], inet_ntoa(a[i]));
+            if (msg->timeout > MAX_TIME_OUT) {
+                log_notice("Server side time out to long:%u\n  use %u instead\n", msg->timeout, MAX_TIME_OUT);
+                msg->timeout = MAX_TIME_OUT;
             }
             
-            log_notice("gre_dst:%s gre_remote:%s gateway:%s netmask:%s\n", p1[0], p1[1], p1[2], p1[3]);
-            log_notice("timeout:%u upload_band:%u download_band:%u\n", timeout, upload_band, download_band);
-
             break;
         }
         case s_info:
@@ -591,49 +452,53 @@ static int do_with_server_info(uint8_t buff[], int sockfd)
             log_warning("server send keepalive\n  Keep-alive thread fail???\n");
             break;
         default:
-            log_err("[do_with_server_info] Unkown msg type: 0x%02x\n", hd->type);
+            log_err("[%s] Unkown msg type: 0x%02x\n", __FUNCTION__, hd->type);
     }
     return 0;
 }
 
-static int get_parameters(uint8_t *buff, \
-				   in_addr_t *gre_dst, in_addr_t *gre_remote, in_addr_t *gateway_ip, in_addr_t *net_mask, \
-				   uint32_t *timeout, uint32_t *upload_band, uint32_t *download_band)
+static int get_parameters(char *buff, struct yixun_msg *msg)
 {
-	rds_packet *hd = (rds_packet *)buff;
-	buff += 8; // offset 8 is first segment
+	struct rds_packet_header *hd = (struct rds_packet_header *)buff;
+	buff = hd->extra; // offset 8 is first segment
 	
-	uint8_t *end = buff + ntohs(hd->length);	// the end of segment
-	while (buff < end)
-	{
-		rds_segment *p = (rds_segment *)buff;
-		if (p->flag != SERVER_SEGMENT_FLAG)
-		{
-			log_err("[get_parameters] Invalid segment flag:0x%02x\n", p->flag);
-			debug_print_hex(p, 64);
+	char *end = buff + ntohs(hd->length);	// the end of segment
+	while (buff < end) {
+		struct rds_segment *p = (struct rds_segment *)buff;
+		if (p->flag != SERVER_SEGMENT_FLAG) {
+			log_err("[%s] Invalid segment flag:0x%02x\n", __FUNCTION__, p->flag);
+#ifdef DEBUG
+			print_hex(p, 64);
+#endif
 			return -1;
 		}
 		switch (p->type) {
 			case s_gre:
-				*gre_dst = *((in_addr_t *)p->content);
+				msg->gre_dst = *((in_addr_t *)p->content);
 				break;
 			case s_cip:
-				*gre_remote = *((in_addr_t *)p->content);
+                if (msg->gre_local == 0)    /* hack: 陕西的某某公司做的那个客户端在这里有些出入，\
+                                            * 本来应该在接入服务器加上一条到gre_local的路由信息的，
+                                            * 不知是出于什么目的没有这样做，导致实际的实现，客户端对发出的包作封包，\
+                                            * 而接入服务器(路由器)却不对流向客户端这边的包作GRE封包处理，所以，\
+                                            * 实际上，这里的信息是被忽略了的
+                                            */
+                    msg->gre_local = *((in_addr_t *)p->content);
 				break;
 			case s_gip:
-				*gateway_ip = *((in_addr_t *)p->content);
+				msg->gre_remote = *((in_addr_t *)p->content);
 				break;
 			case s_mask:
-				*net_mask = *((in_addr_t *)p->content);
+				msg->gre_netmask = *((in_addr_t *)p->content);
 				break;
 			case s_timeout:
-				*timeout = ntohl(*((uint32_t *)p->content));
+				msg->timeout = ntohl(*((uint32_t *)p->content));
 				break;
 			case s_upband:
-				*upload_band = ntohl(*((uint32_t *)p->content));
+				msg->upload_band = ntohl(*((uint32_t *)p->content));
 				break;
 			case s_downband:
-				*download_band = ntohl(*((uint32_t *)p->content));
+				msg->download_band = ntohl(*((uint32_t *)p->content));
 				break;
 			default:
 				break;
@@ -645,7 +510,7 @@ static int get_parameters(uint8_t *buff, \
 
 static int get_server_info(void *buff)
 {
-    rds_packet *hd = (rds_packet *)buff;
+    struct rds_packet_header *hd = (struct rds_packet_header *)buff;
     
     buff += 12; //信息位置
     char tmpbuff[2048];
@@ -668,8 +533,7 @@ static int get_server_info(void *buff)
     if (rval != 0) dprintf("Warning, convert_code returned %d\n", rval);
     
     int i = 0;
-    while(error_info_str[i] != NULL)
-    {
+    while(error_info_str[i] != NULL) {
         if (strnstr(tmpbuff, error_info_str[i], sizeof(tmpbuff)) != NULL)
             return e_user + i;
         i++;
@@ -678,89 +542,38 @@ static int get_server_info(void *buff)
 	return hd->type == s_error ? -1 : 0;
 }
 
-
-static rds_packet * make_rds_packet(enum rds_head_type tp)
+static struct rds_packet_header *
+make_rds_packet(char packet[], enum rds_header_type type)
 {
-    rds_packet *p = (rds_packet *)calloc(sizeof(rds_packet), 1);
-    if (!p)
-    {
-        log_perror("[make_rds_packet] calloc");
-        return NULL;
-    }
-    
+    struct rds_packet_header *p = (struct rds_packet_header *)packet;
     p->flag = RADIUS_HEADER_FLAG; //Always be 0x5f
-    p->type = (uint8_t)tp;
+    p->type = (uint8_t)type;
+    p->pad = 0;
     return p;
 }
 
-
-static void add_segment(rds_packet *p, enum segment_type type, uint16_t length, uint16_t content_len, const uint8_t *content)
+static void
+add_segment(char packet[], enum rds_segment_type type, uint8_t length, uint8_t content_len, const char *content)
 {
-    rds_segment *s = calloc(sizeof(rds_segment), 1);
-    if (!s)
-    {
-        log_perror("[add_segment] calloc");
-        return;
-    }
-	
-	if (length + 4 > SEGMENT_MAX_LEN) length = SEGMENT_MAX_LEN - 4;
+    struct rds_packet_header * p = (struct rds_packet_header *)packet;
+    struct rds_segment *s = (struct rds_segment *)(p->extra + ntohs(p->length));
+	//bzero(&s, sizeof(struct rds_segment));
+    
+	if (length + sizeof(struct rds_segment) > SEGMENT_MAX_LEN)
+        length = SEGMENT_MAX_LEN - sizeof(struct rds_segment);
 	
     s->flag = CLINET_SEGMENT_FLAG;
     s->type = type;
-    s->length = length + 4; //包含segment头的长度4
+    s->length = length + sizeof(struct rds_segment); //包含segment头的长度
+    s->pad = 0;
     
-    if (content_len > length) content_len = length;
-    memcpy(s->content, content, content_len);
-    
-    if (p->extra == NULL)
-    {
-        p->extra = s;
-    }
-    else
-    {
-        rds_segment *t = p->extra;
-        while (t->next) {
-            t = t->next;
-        }
-        t->next = s;
-    }
-    p->length = htons(ntohs(p->length) + s->length); //修正包的长度
+    if (content_len > length)
+        content_len = length;
+    bcopy(content, s->content, content_len);
+        
+    p->length = htons(ntohs(p->length) + s->length); //包的长度按网络序存储
 }
 
-static void make_send_buff(void *buff, rds_packet *p)
-{
-    memcpy(buff, p, 8); //拷贝包头（8个字节）
-    uint8_t *t = (uint8_t *)buff + 8;
-    rds_segment *s = p->extra;
-    while(s)
-    {
-        memcpy(t, s, 4); //segment head size = 4
-        t += 4;
-        size_t len = s->length - 4;
-        if (s->length > 4) memcpy(t, s->content, len);
-        s = s->next;
-        t += len;
-    }
-    return;
-}
-
-static void free_rds_packet(rds_packet *p)
-{
-    if (p == NULL) 
-    {
-        log_warning("[free_rds_packet] Free Null pointer\n");
-        return;
-    }
-    rds_segment *t = p->extra;
-    free(p);
-    
-    while(t)
-    {
-        rds_segment *s = t;
-        t = t->next;
-        free(s);
-    }
-}
 
 /*
  * connect_with_timeout
@@ -771,9 +584,9 @@ static void free_rds_packet(rds_packet *p)
  * @param timeout
  */
 static int connect_tm(int socket, \
-                       const struct sockaddr *addr,
-                       socklen_t addr_len, \
-                       struct timeval *timeout) {
+                      const struct sockaddr *addr,
+                      socklen_t addr_len, \
+                      struct timeval *timeout) {
     int     rval;
     int     sock_flag;
     int     sock_err;
@@ -791,7 +604,7 @@ static int connect_tm(int socket, \
         if (fcntl(socket, F_SETFL, sock_flag) < 0)
             return -1;
     }
-
+    
     // connect
     rval = connect(socket, addr, addr_len);
     if (rval < 0) {
@@ -829,7 +642,7 @@ static int connect_tm(int socket, \
             return 0;
         }
     }
-
+    
     // Set to blocking mode, if the socket is blocking mode before
     if (sock_is_blocking) {
         sock_flag &= (~O_NONBLOCK);
@@ -839,3 +652,4 @@ static int connect_tm(int socket, \
     
     return 0;
 }
+
