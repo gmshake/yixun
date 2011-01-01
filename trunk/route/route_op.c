@@ -198,10 +198,10 @@ len = ROUNDUP(u.sa.sa_len); bcopy((char *)&(u), cp, len); cp += len;\
             perror("read from routing socket");
             err = -1;
         } else {
-            struct sockaddr *destination = NULL;
-            struct sockaddr *netmask = NULL;
-            struct sockaddr *gate = NULL;
-            struct sockaddr_dl *ifp = NULL;
+            struct sockaddr *s_dest = NULL;
+            struct sockaddr *s_netmask = NULL;
+            struct sockaddr *s_gate = NULL;
+            struct sockaddr_dl *s_ifp = NULL;
             register struct sockaddr *sa;
             
             if (msg.msghdr.rtm_version != RTM_VERSION) {
@@ -225,18 +225,18 @@ len = ROUNDUP(u.sa.sa_len); bcopy((char *)&(u), cp, len); cp += len;\
                         sa = (struct sockaddr *)cp;
                         switch (i) {
                             case RTA_DST:
-                                destination = sa;
+                                s_dest = sa;
                                 break;
                             case RTA_GATEWAY:
-                                gate = sa;
+                                s_gate = sa;
                                 break;
                             case RTA_NETMASK:
-                                netmask = sa;
+                                s_netmask = sa;
                                 break;
                             case RTA_IFP:
                                 if (sa->sa_family == AF_LINK &&
                                     ((struct sockaddr_dl *)sa)->sdl_nlen)
-                                    ifp = (struct sockaddr_dl *)sa;
+                                    s_ifp = (struct sockaddr_dl *)sa;
                                 break;
                         }
                         ADVANCE(cp, sa);
@@ -244,16 +244,17 @@ len = ROUNDUP(u.sa.sa_len); bcopy((char *)&(u), cp, len); cp += len;\
                 }
             }
             
-            *dst = ((struct sockaddr_in *)destination)->sin_addr.s_addr;
+            if (dst && s_dest)
+                *dst = ((struct sockaddr_in *)s_dest)->sin_addr.s_addr;
             
-            if (mask)
-                *mask = ((struct sockaddr_in *)netmask)->sin_addr.s_addr;
+            if (mask && s_netmask)
+                *mask = ((struct sockaddr_in *)s_netmask)->sin_addr.s_addr;
 
-            if (gateway && gate && msg.msghdr.rtm_flags & RTF_GATEWAY)
-                *gateway = ((struct sockaddr_in *)gate)->sin_addr.s_addr;
+            if (gateway && s_gate && msg.msghdr.rtm_flags & RTF_GATEWAY)
+                *gateway = ((struct sockaddr_in *)s_gate)->sin_addr.s_addr;
 
-            if (iface && ifp) {
-                strncpy(iface, ifp->sdl_data, ifp->sdl_nlen < IFNAMSIZ ? ifp->sdl_nlen : IFNAMSIZ);
+            if (iface && s_ifp) {
+                strncpy(iface, s_ifp->sdl_data, s_ifp->sdl_nlen < IFNAMSIZ ? s_ifp->sdl_nlen : IFNAMSIZ);
                 iface[IFNAMSIZ - 1] = '\0';
             }
         }
