@@ -12,65 +12,66 @@
 
 #include "yixun_config.h"
 
+struct rds_segment;
+
 #pragma pack(4)
-typedef struct rds_segment {
+struct rds_packet_header //radius包头
+{
 	uint8_t flag;
-	uint8_t type;
-	uint16_t length;
-	uint8_t content[SEGMENT_MAX_LEN];
-	struct rds_segment *next;
-}rds_segment;
+	uint8_t type;   // rds_header_type
+	uint16_t length; // extra segment length, network order
+	uint32_t pad;   // to be zeroed
+	char extra[0];
+};
 
-typedef struct rds_packet //包头，构造时用用链式结构
-	{
-		uint8_t flag;
-		uint8_t type;
-		uint16_t length;
-		uint32_t pad;
-		
-		rds_segment *extra;
-	}rds_packet;
-
+struct rds_segment { // 消息协议中的段
+	uint8_t flag;   
+	uint8_t type;   // rds_segment_type
+    uint8_t length;  // total length, including rds_segment header
+	uint8_t pad;    // to be zeroed
+	char content[0];
+	//struct rds_segment *next;
+};
 #pragma pack()
 
-enum rds_head_type { //包头信息类型
-	u_login = 0x40,
-	u_ack = 0x41,
-	u_logout = 0x44,
-	u_keepalive = 0x4f,
+enum rds_header_type { //radius包头信息类型
+	u_login = 0x40, // user login
+	u_ack = 0x41,   // user ack
+	u_logout = 0x44, // user logout
+	u_keepalive = 0x4f, // user keep alive
 	s_accept = 0x51,
 	s_error = 0x52,
 	s_keepalive = 0x54,
 	s_info = 0xe0,
 };
 
-enum segment_type { //段类型
-	c_ip = 0x01,
-	c_mac = 0x02,
-	c_user = 0x03,
-	c_pwd = 0x04,
-	c_ver = 0x05,
-	c_pad = 0x06,
+enum rds_segment_type { //段类型
+	c_ip = 0x01,    //with ip
+	c_mac = 0x02,   //with mac
+	c_user = 0x03,  //with user name
+	c_pwd = 0x04,   //with password
+	c_ver = 0x05,   //version
+	c_pad = 0x06,   //padding
 	
-	s_gre = 0x05,
-	s_cip = 0x06,
-	s_gip = 0x07,
-	s_timeout = 0x08,
-	s_rule = 0x09,
-	s_mask = 0x0a,
-	s_pad = 0x0b,
-	s_upband = 0x0e,
-	s_downband = 0x0f,
-	s_sinfo = 0x15,
+	s_gre = 0x05,   //server side, gre dst
+	s_cip = 0x06,   //server side, gre local
+	s_gip = 0x07,   //server side, gre remote
+	s_timeout = 0x08,   //server side, keepalive timeout
+	s_rule = 0x09,  // rules
+	s_mask = 0x0a,  // netmask
+	s_pad = 0x0b,   // padding
+	s_upband = 0x0e,    // upload band
+	s_downband = 0x0f,  // download band
+	s_sinfo = 0x15, // server info
 };
 
 enum error_info_type {
-    e_user = 100,
-    e_pwd,
-    e_busy,
+    e_user = 100,  // username not match
+    e_pwd,         // password wrong
+    e_busy,     // server busy
     //e_con,
-    e_fee,
-    e_gre,
+    e_fee,      // account fee exausted
+    e_gre,      // error create gre tunnel
 };
 
 const char * error_info_str[] = {

@@ -161,7 +161,7 @@ ERROR:
 
 int string_to_lladdr(uint8_t lladdr[], const char *src)
 {
-    if (src == NULL || lladdr == NULL) return 0;
+    if (src == NULL || lladdr == NULL) return -1;
     char tmp[64];
     strncpy(tmp, src, sizeof(tmp) - 1);
     tmp[sizeof(tmp) - 1] = '\0';
@@ -181,7 +181,7 @@ int string_to_lladdr(uint8_t lladdr[], const char *src)
         else
             lladdr[i] = (uint8_t)0;
     }
-    return -1;
+    return 0;
     /*
     
     unsigned int tmp[6];

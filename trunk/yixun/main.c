@@ -30,11 +30,15 @@ static int flag_gre_if_isset = 0;
 static in_addr_t default_route = 0;
 
 //static char * interface;
+/*
 static char * username;
 static char * password;
-static char * sip;
-static char * cip;
+static char * serverip;
+static char * clientip;
 static char * mac;
+ */
+static struct yixun_msg msg;
+
 static char * conf_file;
 
 static int extr_argc;
@@ -56,8 +60,7 @@ int main (int argc, char * const argv[])
     parse_args(argc, argv); //process args
     //atexit(clean_up);
     
-    if (flag_daemon && !flag_verbose)
-    {
+    if (flag_daemon && !flag_verbose) {
         openlog(progname, LOG_PID | LOG_CONS, LOG_USER);
         log_opened = 1;
         setlogmask(LOG_UPTO(LOG_INFO));
@@ -74,23 +77,23 @@ int main (int argc, char * const argv[])
 
     if (conf_file != NULL)
         parse_conf_file(conf_file);
-        
-    if (set_config(username, password, sip, cip, mac) < 0)
+
+    /*
+     * not required
+    if (set_config(username, password, serverip, clientip, mac) < 0)
     {
         log_err("[main] setting config\n");
         return -1;
     }
+     */
     
-    if (flag_daemon)
-    {
-        if (daemon(0, 0) < 0)
-        {
+    if (flag_daemon) {
+        if (daemon(0, 0) < 0) {
             log_perror("[main] daemon");
             return -5;
         }
         
-        if (!log_opened)
-        {
+        if (!log_opened) {
             openlog(progname, LOG_PID | LOG_CONS, LOG_USER);
             log_opened = 1;
             setlogmask(LOG_UPTO(LOG_INFO));
@@ -100,36 +103,32 @@ int main (int argc, char * const argv[])
         }
         set_log_type(LDAEMON);
         
-        if ((lockfd = lock_file(LOCKFILE)) < 0) // unable to lock
-        {
+        // unable to lock
+        if ((lockfd = lock_file(LOCKFILE)) < 0) {
             log_err("[main] unable to lock file:%s\n", LOCKFILE);
             goto ERROR;
         }
     }
     
     int retry_count = 2;
-    do
-    {
-        int rval = log_in();
+    do {
+        int rval = log_in(&msg);
         if (rval == 0)
             break;
         else if (rval > 0) // Username or password error, do not retry
             goto ERROR;
         sleep(1);
-    }while(--retry_count > 0);
+    } while(--retry_count > 0);
     
-    if (retry_count <= 0)
-    {
+    if (retry_count <= 0) {
         log_err("[main] when log in\n");
         goto ERROR;
     }
     
     connected = 1;
     
-    if (!flag_test)
-    {
-        if (set_gre_if_tunnel() < 0)
-        {
+    if (!flag_test) {
+        if (set_gre_if_tunnel() < 0) {
             log_perror("[main] set gre interface");
             goto ERROR;
         }
@@ -142,10 +141,9 @@ int main (int argc, char * const argv[])
     signal(SIGQUIT, process_signals);
     signal(SIGALRM, process_signals);
     
-    alarm(timeout);
-    while(1)
-    {
-        accept_client();
+    alarm(msg.timeout);
+    while(1) {
+        accept_client(&msg);
     }
     
     return 0;
@@ -172,23 +170,23 @@ void parse_args(int argc, char * const argv[])
         switch (ch)
         {
             case 'u':
-            username = optarg;
+            msg.username = optarg;
             break;
             
             case 'p':
-            password = optarg;
+            msg.password = optarg;
             break;
             
             case 's':
-            sip = optarg;
+            msg.serverip = optarg;
             break;
             
             case 'i':
-            cip = optarg;
+            msg.clientip = optarg;
             break;
             
             case 'm':
-            mac = optarg;
+            msg.mac = optarg;
             break;
             
             case 'f':
@@ -227,17 +225,14 @@ void parse_args(int argc, char * const argv[])
     extr_argc = argc;
     extr_argv = argv;
     
-    if (!flag_quit)
-    {
-        if (conf_file == NULL) // if do not use configure file, username and password are required
-        {
-            if (username == NULL)
-            {
+    if (!flag_quit) {
+        // if do not use configure file, username and password are required
+        if (conf_file == NULL) {
+            if (msg.username == NULL) {
                 fprintf(stderr, "Error: Require <username>:\n");
                 exit(-1);
             }
-            if (password == NULL)
-            {
+            if (msg.password == NULL) {
                 fprintf(stderr, "Error: Require <password>:\n");
                 exit(-2);
             }
@@ -258,16 +253,16 @@ void parse_conf_file(const char *conf)
  */
 #define FLAG_SET 0x01
 #define FLAG_CROUTE 0x02
-static int gre_if_op(int flag, in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote, in_addr_t netmask, int argc, char *const argv[])
+static int gre_if_op(int flag, struct yixun_msg *msg, int argc, char *const argv[])
 {
     char cmd[512];
     char tmp[128];
     char ssrc[16], sdst[16], slocal[16], sremote[16], snetmask[16];
-    snprintf(ssrc, 16, inet_itoa(src));
-    snprintf(sdst, 16, inet_itoa(dst));
-    snprintf(slocal, 16, inet_itoa(local));
-    snprintf(sremote, 16, inet_itoa(remote));
-    snprintf(snetmask, 16, inet_itoa(netmask));
+    snprintf(ssrc, 16, inet_itoa(msg->gre_src));
+    snprintf(sdst, 16, inet_itoa(msg->gre_dst));
+    snprintf(slocal, 16, inet_itoa(msg->gre_local));
+    snprintf(sremote, 16, inet_itoa(msg->gre_remote));
+    snprintf(snetmask, 16, inet_itoa(msg->gre_netmask));
     
     /*
     if (flag & FLAG_SET) {
@@ -292,7 +287,7 @@ static int gre_if_op(int flag, in_addr_t src, in_addr_t dst, in_addr_t local, in
     strcat(cmd, tmp);
     
     if (flag & FLAG_SET) {
-        sprintf(tmp, " -n%s", inet_itoa(netmask));
+        sprintf(tmp, " -n%s", snetmask);
         strcat(cmd, tmp);
     }
 
@@ -305,11 +300,11 @@ static int gre_if_op(int flag, in_addr_t src, in_addr_t dst, in_addr_t local, in
         sprintf(tmp, " -C%s ", inet_itoa(default_route));
         strcat(cmd, tmp);
         
-        strcat(cmd, inet_itoa(auth_server_addr));
-        if (msg_server_addr != 0) {
+        strcat(cmd, inet_itoa(msg->auth_server));
+        if (msg->msg_server != 0) {
             strcat(cmd, " ");
-            strcat(cmd, inet_itoa(msg_server_addr));
-            if (msg_server_addr != dst) {
+            strcat(cmd, inet_itoa(msg->msg_server));
+            if (msg->gre_dst != msg->msg_server) {
                 strcat(cmd, " ");
                 strcat(cmd, sdst);
             }
@@ -334,28 +329,26 @@ static int gre_if_op(int flag, in_addr_t src, in_addr_t dst, in_addr_t local, in
 int set_gre_if_tunnel()
 {
     return gre_if_op(flag_changeroute ? FLAG_SET | FLAG_CROUTE : FLAG_SET, \
-                     gre_src, gre_dst, gre_local, gre_remote, net_mask, \
+                     &msg, \
                      extr_argc, extr_argv);
 }
 
 int remove_gre_if_tunnel()
 {
     return gre_if_op(flag_changeroute ? FLAG_CROUTE : 0, \
-                     gre_src, gre_dst, gre_local, gre_remote, 0, \
+                     &msg, \
                      extr_argc, extr_argv);
 }
 
 int quit_daemon()
 {
     int fd = open(LOCKFILE, O_RDONLY);
-    if (fd < 0)
-    {
+    if (fd < 0) {
         log_perror("[quit_daemon] open:%s", LOCKFILE);
         return -1;
     }
     
-    if (lockf(fd, F_TEST, 0) == 0) // no daemons
-    {
+    if (lockf(fd, F_TEST, 0) == 0) {
         log_info("[quit_daemon] No daemons found\n");
         return 0;
     }
@@ -367,8 +360,7 @@ int quit_daemon()
     sscanf(fbuff, "%ld", &pid);
     close(fd);
     
-    if (kill(pid, SIGTERM) < 0)
-    {
+    if (kill(pid, SIGTERM) < 0) {
         log_perror("[quit_daemon] kill");
         return -1;
     }
@@ -385,18 +377,15 @@ int quit_daemon()
 int lock_file(const char *lockfile)
 {
     int fd = open(lockfile, O_RDWR | O_CREAT, 0640);
-    if (fd < 0)
-    {
+    if (fd < 0) {
         log_perror("[lock_file] open file");
         return -1;
     }
-    if (lockf(fd, F_TLOCK, 0) < 0)
-    {
+    if (lockf(fd, F_TLOCK, 0) < 0) {
         log_perror("[lock_file] lockf");
         return -1;
     }
-    if (ftruncate(fd, 0) < 0)
-    {
+    if (ftruncate(fd, 0) < 0) {
         log_perror("[lock_file] ftruncate");
         return -2;
     }
@@ -404,8 +393,7 @@ int lock_file(const char *lockfile)
     char fbuff[32];
     snprintf(fbuff, sizeof(fbuff), "%ld", (long)getpid());
 
-    if (write(fd, fbuff, strlen(fbuff)) < 0)
-    {
+    if (write(fd, fbuff, strlen(fbuff)) < 0) {
         log_perror("[lock_file] write");
         close(fd);
         return -1;
@@ -434,21 +422,18 @@ void usage()
 
 void process_signals(int sig)
 {
-    switch (sig)
-    {
+    switch (sig) {
         case SIGALRM:
-            if (send_keep_alive() < 0)
-            {
+            if (keep_alive(&msg) < 0) {
                 sleep(1);
-                if (send_keep_alive() < 0) // unable to send keep alive to BRAS
-                {
+                if (keep_alive(&msg) < 0) { // unable to send keep alive to BRAS
                     log_warning("Failed sending keep-alive packets.");
                     stop_listen();
                     connected = 0;
                     goto end;
                 }
             }
-            alarm(timeout);
+            alarm(msg.timeout);
             break;
         case SIGHUP:
         case SIGINT:
@@ -460,7 +445,7 @@ void process_signals(int sig)
         default:
             log_warning("[process_signals]: Unkown signal %d", sig);
         break;
-    }      
+    }
     signal(sig, process_signals); // let signal be caught again
     return;
     
@@ -476,7 +461,7 @@ void cleanup()
         close(lockfd);
     }
     if (flag_gre_if_isset) remove_gre_if_tunnel();
-    if (connected) log_out();
+    if (connected) log_out(&msg);
     if (flag_daemon) log_notice("Daemon ended.");
     if (log_opened) closelog();
 }
