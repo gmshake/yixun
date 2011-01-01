@@ -186,14 +186,15 @@ len = ROUNDUP(u.sa.sa_len); bcopy((char *)&(u), cp, len); cp += len;\
     }
     
     if (write(sock, (char *)&msg, len) < 0) {
-        perror("write PF_ROUTE failed");
         err = -1;
+        goto end;
     }
     
     if (op == RTM_GET) {
 		do {
 			len = read(sock, (char *)&msg, sizeof(msg));
 		} while (len > 0 && (msg.msghdr.rtm_seq != seq || msg.msghdr.rtm_pid != pid));
+        
 		if (len < 0) {
             perror("read from routing socket");
             err = -1;
@@ -212,7 +213,7 @@ len = ROUNDUP(u.sa.sa_len); bcopy((char *)&(u), cp, len); cp += len;\
             if (msg.msghdr.rtm_msglen > len) {
                 fprintf(stderr, "message length mismatch, in packet %d, returned %lu\n", msg.msghdr.rtm_msglen, len);
             }
-            if (msg.msghdr.rtm_errno)  {
+            if (msg.msghdr.rtm_errno) {
                 fprintf(stderr, "message indicates error %d, %s\n", msg.msghdr.rtm_errno, strerror(msg.msghdr.rtm_errno));
                 err = -1;
                 goto end;
@@ -244,14 +245,28 @@ len = ROUNDUP(u.sa.sa_len); bcopy((char *)&(u), cp, len); cp += len;\
                 }
             }
             
-            if (dst && s_dest)
-                *dst = ((struct sockaddr_in *)s_dest)->sin_addr.s_addr;
-            
-            if (mask && s_netmask)
-                *mask = ((struct sockaddr_in *)s_netmask)->sin_addr.s_addr;
+            if (s_dest && msg.msghdr.rtm_flags & RTF_UP) {
+                if (msg.msghdr.rtm_flags & RTF_WASCLONED)
+                    *dst = 0;
+                else
+                    *dst = ((struct sockaddr_in *)s_dest)->sin_addr.s_addr;
+            }
 
-            if (gateway && s_gate && msg.msghdr.rtm_flags & RTF_GATEWAY)
-                *gateway = ((struct sockaddr_in *)s_gate)->sin_addr.s_addr;
+            if (mask) {
+                if (*dst == 0)
+                    *mask = 0;
+                else if (s_netmask)
+                    *mask = ((struct sockaddr_in *)s_netmask)->sin_addr.s_addr; // there must be something wrong here....Ah..
+                else
+                    *mask = 0xffffffff; // it is a host
+            }
+
+            if (gateway && s_gate) {
+                if (msg.msghdr.rtm_flags & RTF_GATEWAY)
+                    *gateway = ((struct sockaddr_in *)s_gate)->sin_addr.s_addr;
+                else
+                    *gateway = 0;
+            }
 
             if (iface && s_ifp) {
                 strncpy(iface, s_ifp->sdl_data, s_ifp->sdl_nlen < IFNAMSIZ ? s_ifp->sdl_nlen : IFNAMSIZ);

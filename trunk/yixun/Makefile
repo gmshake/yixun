@@ -23,7 +23,7 @@ OBJS = common_logs.o radius.o convert_code.o encode_password.o get_ip_mac.o logi
 
 PROGS = yixun
 
-.PHONY:all
+.PHONY:all install uninstall libclean clean
 all: ${PROGS}
 
 yixun: ${OBJS} main.o
@@ -32,6 +32,7 @@ yixun: ${OBJS} main.o
 install:
 	test -d ${BASE} || mkdir -p ${BASE}
 	install ${PROGS} ${BASE}
+
 uninstall:
 	test -f ${BASE}/${PROGS} && rm -f ${BASE}/${PROGS}
 
