@@ -70,24 +70,9 @@
 #define S_BUF_LEN 512
 #endif
 
-//radius协议，段最大长度
+//radius协议，段最大长度，8bit
 #ifndef SEGMENT_MAX_LEN
 #define SEGMENT_MAX_LEN 256
-#endif
-
-//radius协议，消息头标志
-#ifndef RADIUS_HEADER_FLAG
-#define RADIUS_HEADER_FLAG 0x5f
-#endif
-
-//radius协议，客户端段标志
-#ifndef CLINET_SEGMENT_FLAG
-#define CLINET_SEGMENT_FLAG 0x14
-#endif
-
-//radius协议，服务端段标志
-#ifndef SERVER_SEGMENT_FLAG
-#define SERVER_SEGMENT_FLAG 0x15
 #endif
 
 #endif //_YIXUN_CONFIG_H
