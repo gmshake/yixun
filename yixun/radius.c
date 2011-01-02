@@ -39,26 +39,16 @@
 #endif
 
 const static uint8_t version[4] = {0x03, 0x00, 0x00, 0x06};
-const static uint8_t padding[4] = {0x00, 0x00, 0x00, 0x00};
+const static uint8_t zeros[4] = {0x00, 0x00, 0x00, 0x00};
 
 static int sockListen;
 static int is_listening;
 
-/*
 
-int log_in(struct yixun_msg *msg);
-int log_out(struct yixun_msg *msg);
-int keep_alive(struct yixun_msg *msg);
-
-int start_listen();
-int stop_listen();
-int accept_client();
-*/
-void print_yixun_msg(struct yixun_msg *msg);
+void print_config(struct yixun_msg *msg);
 
 static int pre_config(struct yixun_msg *msg);
 static int yixun_log_op(int op, struct yixun_msg *msg);
-static int get_server_info(void *buff);
 static int do_with_server_info(char buff[], struct yixun_msg *msg, int sockfd);  //返回0表示无错，返回正数，表示出错原因(e_user, e_pwd ....)
 static int get_parameters(char *buff, struct yixun_msg *msg); //认证通过后，获取接入服务器给的参数
 
@@ -75,10 +65,17 @@ static int connect_tm(int socket, \
                       struct timeval *timeout);
 
 
+/*
+ * pre_config(), pre config necessary infomation
+ * @param msg, in/out
+ * return 0 on success, otherwise -1;
+ */
 static int pre_config(struct yixun_msg *msg)
 {
-    if (msg->username == NULL)
+    if (msg->username == NULL) {
+        log_err("[%s] Require username\n", __FUNCTION__);
         return -1;
+    }
     
     if (msg->clientip) {
         msg->gre_src = inet_addr(msg->clientip);
@@ -113,12 +110,19 @@ static int pre_config(struct yixun_msg *msg)
     return 0;
 }
 
+/*
+ * yixun_log_op(), make && send proper packet indicated by op
+ * @op, which type of packet
+ * @param msg, in/out
+ * return 0 on success, otherwise none-zero;
+ */
 
 #define LOGIN 0x01
 #define LOGOUT 0x02
 #define KEEPALIVE 0x03
 static int yixun_log_op(int op, struct yixun_msg *msg)
 {
+    int rval = 0;
     /* 重置发送缓冲区信息 */
     static int lastop = 0;
     if (op != lastop) {
@@ -151,12 +155,14 @@ static int yixun_log_op(int op, struct yixun_msg *msg)
     
     if (connect_tm(sockfd, (struct sockaddr *)&auth_server, sizeof(struct sockaddr_in), &tv) < 0) {
         log_perror("[%s] connect %s", __FUNCTION__, inet_ntoa(auth_server.sin_addr));
+        rval = -1;
         goto ERROR;
     }      
 
     if (!msg->make_send_buff_done) {
         if (get_ip_mac_by_socket(sockfd, &msg->gre_local, msg->mac ? NULL : msg->eth_addr) < 0) {
             log_err("[%s] get ip address and eth_addr", __FUNCTION__);
+            rval = -1;
             goto ERROR;
         }
         if (msg->clientip == NULL || msg->gre_src == 0 || msg->gre_src == 0xffffffff)
@@ -174,30 +180,27 @@ static int yixun_log_op(int op, struct yixun_msg *msg)
                 add_segment(msg->s_buff,  c_user, MAX_USER_NAME_LEN, strlen(msg->username), (char *)msg->username); //Hack:用户名有长度限制
                 add_segment(msg->s_buff,  c_pwd, strlen((char *)sec_pwd), strlen((char *)sec_pwd), (char *)sec_pwd);
                 add_segment(msg->s_buff,  c_ver, 4, sizeof(version), (char *)version);
-                add_segment(msg->s_buff,  c_pad, 4, sizeof(padding), (char *)padding);
+                add_segment(msg->s_buff,  c_zero, 4, sizeof(zeros), (char *)zeros);
                 
                 free(sec_pwd);
-                
-                msg->s_buff_len = ntohs(((struct rds_packet_header *)msg->s_buff)->length) + sizeof(struct rds_packet_header);
             }
                 break;
             case LOGOUT:
                 make_rds_packet(msg->s_buff, u_logout); //Hack:退出登录和保持活动连接只有这一个地方有差别
                 add_segment(msg->s_buff, c_ip, sizeof(in_addr_t), sizeof(in_addr_t), (char *)&msg->gre_src);
                 add_segment(msg->s_buff, c_user, MAX_USER_NAME_LEN, strlen(msg->username), (char *)msg->username);
-                msg->s_buff_len = ntohs(((struct rds_packet_header *)msg->s_buff)->length) + sizeof(struct rds_packet_header);
                 break;
             case KEEPALIVE:
                 make_rds_packet(msg->s_buff, u_keepalive);
                 add_segment(msg->s_buff, c_ip, sizeof(in_addr_t), sizeof(in_addr_t), (char *)&msg->gre_src);
                 add_segment(msg->s_buff, c_user, MAX_USER_NAME_LEN, strlen(msg->username), (char *)msg->username);
-                msg->s_buff_len = ntohs(((struct rds_packet_header *)msg->s_buff)->length) + sizeof(struct rds_packet_header);
                 break;
             default:
                 log_err("[%s] unkown op %d", __FUNCTION__, op);
+                rval = -2;
                 goto ERROR;
-                break;
         }
+        msg->s_buff_len = RDS_PACKET_LEN(msg->s_buff);
         msg->make_send_buff_done = -1;
     }
     
@@ -205,35 +208,39 @@ static int yixun_log_op(int op, struct yixun_msg *msg)
     tv.tv_usec = 0;
     if (setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) < 0) {
         log_perror("[%s] setsockopt", __FUNCTION__);
+        rval = -3;
         goto ERROR;
     }
-    tv.tv_sec = SND_RCV_TIME_OUT;
-    tv.tv_usec = 0;
-    if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
-        log_perror("[%s] setsockopt", __FUNCTION__);
-        goto ERROR;
-    }
-    
+
     if (send(sockfd, msg->s_buff, msg->s_buff_len, 0) < 0) {
         log_perror("[%s] send to %s", __FUNCTION__, inet_ntoa(auth_server.sin_addr));
+        rval = -1;
         goto ERROR;
     }
 	
     switch (op) {
         case LOGIN:
         {
-            char r_buff[R_BUF_LEN];
+            char r_buff[R_BUF_LEN]; // receive buffer
+            
+            tv.tv_sec = SND_RCV_TIME_OUT;
+            tv.tv_usec = 0;
+            if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
+                log_perror("[%s] setsockopt", __FUNCTION__);
+                rval = -3;
+                goto ERROR;
+            }
             
             int ret = recv(sockfd, r_buff, R_BUF_LEN, 0);
             if (ret > 0) {
-                if (do_with_server_info(r_buff, msg, sockfd) != 0)
+                if ((rval = do_with_server_info(r_buff, msg, sockfd)) != 0)
                     goto ERROR;
             } else {
                 if (ret == 0)
                     log_err("[%s] receive: Auth server %s has closed its half side of the connection\n", __FUNCTION__, inet_ntoa(auth_server.sin_addr));
                 else
                     log_perror("[%s] receive", __FUNCTION__);
-                
+                rval = -1;
                 goto ERROR;
             }
         }
@@ -241,40 +248,55 @@ static int yixun_log_op(int op, struct yixun_msg *msg)
         case LOGOUT:
             break;
         case KEEPALIVE:
-            
             break;
         default:
             log_err("[%s] unkown op %d", __FUNCTION__, op);
-            goto ERROR;
+            rval = -1;
             break;
     }
     
-    close(sockfd);
-    return 0;
 ERROR:
     close(sockfd);
-    return -2;
+    return rval;
 }
 
-
+/*
+ * log_in(), send login packet
+ * @param msg, in/out
+ * return 0 on success, otherwise -1;
+ */
 int log_in(struct yixun_msg *msg)
 {
     int rval = yixun_log_op(LOGIN, msg);
     if (rval == 0)
-        print_yixun_msg(msg);
+        print_config(msg);
     return rval;
 }
 
+/*
+ * log_out(), send logout packet
+ * @param msg, in
+ * return 0 on success, otherwise -1;
+ */
 int log_out(struct yixun_msg *msg)
 {
     return yixun_log_op(LOGOUT, msg);
 }
 
+/*
+ * keep_alive(), send keep alive packet
+ * @param msg, in
+ * return 0 on success, otherwise -1;
+ */
 int keep_alive(struct yixun_msg *msg)
 {
     return yixun_log_op(KEEPALIVE, msg);
 }
 
+/*
+ * start_listen(), start listen on Radius port
+ * return 0 on success, otherwise -1;
+ */
 int start_listen()
 {
     if (is_listening) return sockListen;
@@ -312,14 +334,24 @@ ERROR:
     return -1;
 }
 
+/*
+ * stop_listen(), stop listen on Radius port
+ * return 0
+ */
 int stop_listen()
 {
-    if (!is_listening) return 0;
-	close(sockListen);
-	is_listening = 0;
+    if (is_listening) {
+        close(sockListen);
+        is_listening = 0;
+    }
 	return 0;
 }
 
+/*
+ * accept_client(), to receive server side infomation
+ * @param msg, in
+ * return 0 on success, otherwise return none-zero
+ */
 int accept_client(struct yixun_msg *msg)
 {
     static fd_set rfds;
@@ -388,7 +420,12 @@ int accept_client(struct yixun_msg *msg)
     return 0;
 }
 
-void print_yixun_msg(struct yixun_msg *msg)
+
+/*
+ * print_config(), print configuration from returned by server
+ * @msg,    in
+ */
+void print_config(struct yixun_msg *msg)
 {
     struct in_addr a[4];
     char p1[4][20];
@@ -403,6 +440,13 @@ void print_yixun_msg(struct yixun_msg *msg)
     log_notice("timeout:%u upload_band:%u download_band:%u\n", msg->timeout, msg->upload_band, msg->download_band);
 }
 
+/*
+ * do_with_server_info(), act on receiving server packet
+ * @param buff, server side packet
+ * @msg,    out
+ * @sockfd, send yixun user ack from which
+ * on success, return 0, otherwise return none-zero
+ */
 static int do_with_server_info(char buff[], struct yixun_msg *msg, int sockfd)
 {
     struct rds_packet_header *hd = (struct rds_packet_header *)buff;
@@ -444,10 +488,15 @@ static int do_with_server_info(char buff[], struct yixun_msg *msg, int sockfd)
             break;
         }
         case s_info:
-            get_server_info(buff);
+            get_parameters(buff, msg);
+            log_info(msg->server_info);
             break;
         case s_error:
-            return get_server_info(buff);
+        {
+            int rval = get_parameters(buff, msg);
+            log_err(msg->server_info);
+            return rval ? rval : -1;
+        }
         case s_keepalive:
             log_warning("server send keepalive\n  Keep-alive thread fail???\n");
             break;
@@ -457,10 +506,16 @@ static int do_with_server_info(char buff[], struct yixun_msg *msg, int sockfd)
     return 0;
 }
 
+/*
+ * get_parameters(), get infomation from server side packet
+ * @param buff, server size packet
+ * @msg,    out
+ * on success, return 0, otherwise return none-zero
+ */
 static int get_parameters(char *buff, struct yixun_msg *msg)
 {
 	struct rds_packet_header *hd = (struct rds_packet_header *)buff;
-	buff = hd->extra; // offset 8 is first segment
+	buff = hd->extra; // first segment
 	
 	char *end = buff + ntohs(hd->length);	// the end of segment
 	while (buff < end) {
@@ -473,34 +528,63 @@ static int get_parameters(char *buff, struct yixun_msg *msg)
 			return -1;
 		}
 		switch (p->type) {
-			case s_gre:
+			case s_gre_d:
 				msg->gre_dst = *((in_addr_t *)p->content);
 				break;
-			case s_cip:
+			case s_gre_l:
                 if (msg->gre_local == 0)    /* hack: 陕西的某某公司做的那个客户端在这里有些出入，\
                                             * 本来应该在接入服务器加上一条到gre_local的路由信息的，
                                             * 不知是出于什么目的没有这样做，导致实际的实现，客户端对发出的包作封包，\
                                             * 而接入服务器(路由器)却不对流向客户端这边的包作GRE封包处理，所以，\
-                                            * 实际上，这里的信息是被忽略了的
+                                            * 实际上，这里的信息是被忽略了的，如果不忽略，反而连接不上
                                             */
                     msg->gre_local = *((in_addr_t *)p->content);
 				break;
-			case s_gip:
+			case s_gre_r:
 				msg->gre_remote = *((in_addr_t *)p->content);
 				break;
-			case s_mask:
-				msg->gre_netmask = *((in_addr_t *)p->content);
-				break;
-			case s_timeout:
+            case s_timeout:
 				msg->timeout = ntohl(*((uint32_t *)p->content));
 				break;
+            case s_rule:
+#ifdef DEBUG
+                print_hex(p, 64);
+#endif
+                break;
+            case s_mask:
+				msg->gre_netmask = *((in_addr_t *)p->content);
+				break;
+            case s_zero:
+                break;
 			case s_upband:
 				msg->upload_band = ntohl(*((uint32_t *)p->content));
 				break;
 			case s_downband:
 				msg->download_band = ntohl(*((uint32_t *)p->content));
 				break;
+            case s_sinfo:
+            {
+                bzero(msg->server_info, sizeof(msg->server_info));
+                int rval = convert_code("GB18030", "UTF-8", \
+                                        p->content, strlen(p->content), \
+                                        msg->server_info, p->length - sizeof(struct rds_segment) < sizeof(msg->server_info) ? \
+                                        p->length - sizeof(struct rds_segment) : sizeof(msg->server_info));
+                if (rval != 0) dprintf("Warning, convert_code returned %d\n", rval);
+                
+                strcat(msg->server_info, "\n");
+
+                int i = 0;
+                while(error_info_str[i] != NULL) {
+                    if (strnstr(msg->server_info, error_info_str[i], sizeof(msg->server_info)) != NULL)
+                        return e_user + i;
+                    i++;
+                }
+            }
+                break;
 			default:
+#ifdef DEBUG
+                fprintf(stderr, "%s: Unkown segment type:0x%02x\n", __FUNCTION__, p->type);
+#endif
 				break;
 		}
 		buff += p->length;
@@ -508,50 +592,33 @@ static int get_parameters(char *buff, struct yixun_msg *msg)
 	return 0;
 }
 
-static int get_server_info(void *buff)
-{
-    struct rds_packet_header *hd = (struct rds_packet_header *)buff;
-    
-    buff += 12; //信息位置
-    char tmpbuff[2048];
-    int rval = convert_code("GB18030", "UTF-8", (char *)buff, strlen((char*)buff), tmpbuff, sizeof(tmpbuff) - 1);
-    tmpbuff[sizeof(tmpbuff) - 1] = '\0';
-    int len = strlen(tmpbuff);
-    //tmpbuff[len] = '\n';
-    //tmpbuff[len + 1] = '\0';
-    
-    snprintf(tmpbuff + len, sizeof(tmpbuff) - len, "\n");
-    //dprintf("tmpbuff:%s", tmpbuff);
-    
-    if (hd->type == s_info)
-        log_info(tmpbuff);
-    else if(hd->type == s_error)
-        log_err(tmpbuff);
-    else
-        log_debug(tmpbuff);
-    
-    if (rval != 0) dprintf("Warning, convert_code returned %d\n", rval);
-    
-    int i = 0;
-    while(error_info_str[i] != NULL) {
-        if (strnstr(tmpbuff, error_info_str[i], sizeof(tmpbuff)) != NULL)
-            return e_user + i;
-        i++;
-    }
-    
-	return hd->type == s_error ? -1 : 0;
-}
-
+/*
+ * make_rds_packet(), fill packet with necessary infomation, ie packet_flag, packet_type and zeros
+ * @param packet, packet buffer
+ * @param type, which rds_segment_type
+ * @param length, extra content length, the segment len is length + sizeof(struct rds_segment)
+ * @param content_len, real content length. if content_len is larger than length, copy length data at most
+ * @param content, data to be copied
+ */
 static struct rds_packet_header *
 make_rds_packet(char packet[], enum rds_header_type type)
 {
     struct rds_packet_header *p = (struct rds_packet_header *)packet;
     p->flag = RADIUS_HEADER_FLAG; //Always be 0x5f
     p->type = (uint8_t)type;
-    p->pad = 0;
+    p->zero = 0;
     return p;
 }
 
+
+/*
+ * add_segment(), add extra data to rds_packet
+ * @param packet, packet buffer
+ * @param type, which rds_segment_type
+ * @param length, extra content length, the segment len is length + sizeof(struct rds_segment)
+ * @param content_len, real content length. if content_len is larger than length, copy length data at most
+ * @param content, data to be copied, NULL indicates skip length packet, ie, leave length packet unchanged
+ */
 static void
 add_segment(char packet[], enum rds_segment_type type, uint8_t length, uint8_t content_len, const char *content)
 {
@@ -565,11 +632,13 @@ add_segment(char packet[], enum rds_segment_type type, uint8_t length, uint8_t c
     s->flag = CLINET_SEGMENT_FLAG;
     s->type = type;
     s->length = length + sizeof(struct rds_segment); //包含segment头的长度
-    s->pad = 0;
+    s->zero = 0;
     
     if (content_len > length)
         content_len = length;
-    bcopy(content, s->content, content_len);
+    
+    if (content && content_len > 0)
+        bcopy(content, s->content, content_len);
         
     p->length = htons(ntohs(p->length) + s->length); //包的长度按网络序存储
 }
@@ -582,6 +651,7 @@ add_segment(char packet[], enum rds_segment_type type, uint8_t length, uint8_t c
  * @param sockaddr
  * @param address_len
  * @param timeout
+ * on success, return 0, otherwise return -1
  */
 static int connect_tm(int socket, \
                       const struct sockaddr *addr,
@@ -609,7 +679,6 @@ static int connect_tm(int socket, \
     rval = connect(socket, addr, addr_len);
     if (rval < 0) {
         if (errno == EINPROGRESS) {
-            dprintf("connect_tm: EINPROGRESS in connect() - selecting\n");
             do {
                 tv.tv_sec = timeout->tv_sec;
                 tv.tv_usec = timeout->tv_usec;
@@ -639,7 +708,7 @@ static int connect_tm(int socket, \
             } while (1);
         } else {
             dprintf("Error connecting %d - %s\n", errno, strerror(errno));
-            return 0;
+            return -1;
         }
     }
     

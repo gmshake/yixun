@@ -40,6 +40,7 @@ struct yixun_msg {
     uint8_t eth_addr[6];
     size_t s_buff_len;
     char s_buff[S_BUF_LEN];
+    char server_info[SEGMENT_MAX_LEN + (SEGMENT_MAX_LEN >> 1)];
 };
 
 /*
