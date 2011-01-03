@@ -10,6 +10,7 @@
 #include <sys/socket.h> // socket()
 #include <sys/ioctl.h>  // SIOCGIFCONF, SIOCGIFADDR
 
+#include <net/ethernet.h> //ETHER_ADDR_LEN
 #include <net/if.h>     //ifreq, ifconf
 
 #if defined(__APPLE__) || defined(__FreeBSD__)
@@ -58,9 +59,9 @@ int get_ip_mac_by_socket(int socket, in_addr_t *ip_addr,   uint8_t eth_addr[])
     
     if (ifc.ifc_len <= IFCONF_BUF_LEN)
     {
-        struct ifreq ifr, *ifrq = ifc.ifc_req;
+        struct ifreq ifr;
+        struct ifreq *ifrq = ifc.ifc_req, *lifrq = (struct ifreq *)&ifc.ifc_buf[ifc.ifc_len];
         bzero(&ifr, sizeof(ifr));
-        int space = 0;
         do
         {
             struct sockaddr *sa = (struct sockaddr *)&ifrq->ifr_addr;
@@ -69,24 +70,32 @@ int get_ip_mac_by_socket(int socket, in_addr_t *ip_addr,   uint8_t eth_addr[])
 #endif
             {
                 strcpy(ifr.ifr_name, ifrq->ifr_name);
+
                 if (ioctl(socket, SIOCGIFADDR, &ifr) == 0)
                 {
                     if (((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr.s_addr == sa_addr.sin_addr.s_addr ) // found it
                     {
 #if defined(__APPLE__) || defined(__FreeBSD__)
-                        memcpy (eth_addr, LLADDR((struct sockaddr_dl *)sa), 6);
+                        memcpy(eth_addr, LLADDR((struct sockaddr_dl *)sa), ETHER_ADDR_LEN);
+                        return 0;
 #else
                         if (ioctl(socket, SIOCGIFHWADDR, &ifr) == 0)
+                        {
                             memcpy(eth_addr, ifr.ifr_hwaddr.sa_data, ETHER_ADDR_LEN);
+                            return 0;
+                        }
 #endif
-                        return 0;
                     }
                 }
             }
-            
-            ifrq = (struct ifreq*)(sa->sa_len + (caddr_t)&ifrq->ifr_addr);
-            space += (int)sa->sa_len + sizeof(ifrq->ifr_name);
-        } while (space < ifc.ifc_len);
+#if defined(__APPLE__) || defined(__FreeBSD__)
+            ifrq = (struct ifreq*)((caddr_t)ifrq + _SIZEOF_ADDR_IFREQ(*ifrq));
+#else
+            ifrq++;
+#endif
+            //ifrq = (struct ifreq*)(sa->sa_len + (caddr_t)&ifrq->ifr_addr);
+            //space += (int)sa->sa_len + sizeof(ifrq->ifr_name);
+        } while (ifrq < lifrq);
         
         log_err("Cannot find MAC addr...\n");
         return -3;
@@ -138,8 +147,7 @@ int get_ip_mac_by_name(const char *ifname, in_addr_t *ip_addr, uint8_t eth_addr[
         
         if (ifc.ifc_len <= IFCONF_BUF_LEN)
         {
-            struct ifreq *ifrq = ifc.ifc_req;
-            int space = 0;
+            struct ifreq *ifrq = ifc.ifc_req, *lifrq = (struct ifreq *)&ifc.ifc_buf[ifc.ifc_len];
             do
             {
                 struct sockaddr *sa = &ifrq->ifr_addr;
@@ -148,14 +156,13 @@ int get_ip_mac_by_name(const char *ifname, in_addr_t *ip_addr, uint8_t eth_addr[
                 {
                     if (strcmp(ifname, ifrq->ifr_name) == 0)
                     {
-                        memcpy(eth_addr, LLADDR((struct sockaddr_dl *)sa), 6); // Found MAC address
-                        goto DONE;
+                        memcpy(eth_addr, LLADDR((struct sockaddr_dl *)sa), ETHER_ADDR_LEN); // Found MAC address
+                        close(sockfd);
+                        return 0;
                     }
                 }
-                ifrq = (struct ifreq*)(sa->sa_len + (caddr_t)&ifrq->ifr_addr);
-                space += (int)sa->sa_len + sizeof(ifrq->ifr_name);
-                
-            } while (space < ifc.ifc_len);
+                ifrq = (struct ifreq*)((caddr_t)ifrq + _SIZEOF_ADDR_IFREQ(*ifrq));
+            } while (ifrq < lifrq);
             
             log_err("Cannot find device %s.\n", ifname);
             goto ERROR;
@@ -177,9 +184,6 @@ int get_ip_mac_by_name(const char *ifname, in_addr_t *ip_addr, uint8_t eth_addr[
 #endif
     }
     
-DONE:
-    close(sockfd);
-    return 0;
 ERROR:
     close(sockfd);
     return -1;
@@ -191,10 +195,10 @@ int string_to_lladdr(uint8_t lladdr[], const char *src)
     char tmp[64];
     strncpy(tmp, src, sizeof(tmp) - 1);
     tmp[sizeof(tmp) - 1] = '\0';
-    char * args[6] = {NULL};
+    char * args[ETHER_ADDR_LEN] = {NULL};
     char *instr = tmp;
     int i;
-    for (i = 0; i < 6; i++)
+    for (i = 0; i < ETHER_ADDR_LEN; i++)
     {
         args[i] = strsep(&instr, ":- ");
         if (args[i] != NULL)

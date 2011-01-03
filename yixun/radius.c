@@ -160,7 +160,7 @@ static int yixun_log_op(int op, struct yixun_msg *msg)
 
     if (!msg->make_send_buff_done) {
         if (get_ip_mac_by_socket(sockfd, &msg->gre_local, msg->mac ? NULL : msg->eth_addr) < 0) {
-            log_err("[%s] get ip address and eth_addr", __FUNCTION__);
+            log_err("[%s] get ip address and eth_addr\n", __FUNCTION__);
             rval = -1;
             goto ERROR;
         }
@@ -195,7 +195,7 @@ static int yixun_log_op(int op, struct yixun_msg *msg)
                 add_segment(msg->s_buff, c_user, MAX_USER_NAME_LEN, strlen(msg->username), (char *)msg->username);
                 break;
             default:
-                log_err("[%s] unkown op %d", __FUNCTION__, op);
+                log_err("[%s] unkown op %d\n", __FUNCTION__, op);
                 rval = -2;
                 goto ERROR;
         }
@@ -249,7 +249,7 @@ static int yixun_log_op(int op, struct yixun_msg *msg)
         case KEEPALIVE:
             break;
         default:
-            log_err("[%s] unkown op %d", __FUNCTION__, op);
+            log_err("[%s] unkown op %d\n", __FUNCTION__, op);
             rval = -1;
             break;
     }
@@ -474,7 +474,7 @@ static int do_with_server_info(char buff[], struct yixun_msg *msg, int sockfd)
             accept_client(msg);
             
             if (get_parameters(buff, msg) < 0) {
-                log_err("[%s] Cannot get parameters", __FUNCTION__);
+                log_err("[%s] Cannot get parameters\n", __FUNCTION__);
                 stop_listen();
                 return -1;
             }
