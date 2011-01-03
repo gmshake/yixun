@@ -64,8 +64,8 @@ int get_ip_mac_by_socket(int socket, in_addr_t *ip_addr,   uint8_t eth_addr[])
         bzero(&ifr, sizeof(ifr));
         do
         {
-            struct sockaddr *sa = (struct sockaddr *)&ifrq->ifr_addr;
 #if defined(__APPLE__) || defined(__FreeBSD__)
+            struct sockaddr *sa = (struct sockaddr *)&ifrq->ifr_addr;
             if (((struct sockaddr_dl *)sa)->sdl_type == IFT_ETHER)
 #endif
             {
@@ -93,8 +93,6 @@ int get_ip_mac_by_socket(int socket, in_addr_t *ip_addr,   uint8_t eth_addr[])
 #else
             ifrq++;
 #endif
-            //ifrq = (struct ifreq*)(sa->sa_len + (caddr_t)&ifrq->ifr_addr);
-            //space += (int)sa->sa_len + sizeof(ifrq->ifr_name);
         } while (ifrq < lifrq);
         
         log_err("Cannot find MAC addr...\n");

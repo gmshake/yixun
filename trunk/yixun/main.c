@@ -258,11 +258,12 @@ static int gre_if_op(int flag, struct yixun_msg *msg, int argc, char *const argv
     char cmd[512];
     char tmp[128];
     char ssrc[16], sdst[16], slocal[16], sremote[16], snetmask[16];
-    snprintf(ssrc, 16, inet_itoa(msg->gre_src));
-    snprintf(sdst, 16, inet_itoa(msg->gre_dst));
-    snprintf(slocal, 16, inet_itoa(msg->gre_local));
-    snprintf(sremote, 16, inet_itoa(msg->gre_remote));
-    snprintf(snetmask, 16, inet_itoa(msg->gre_netmask));
+
+    snprintf(ssrc, 16, "%s", inet_itoa(msg->gre_src));
+    snprintf(sdst, 16, "%s", inet_itoa(msg->gre_dst));
+    snprintf(slocal, 16, "%s", inet_itoa(msg->gre_local));
+    snprintf(sremote, 16, "%s", inet_itoa(msg->gre_remote));
+    snprintf(snetmask, 16, "%s", inet_itoa(msg->gre_netmask));
     
     /*
     if (flag & FLAG_SET) {
