@@ -1,16 +1,16 @@
 all:
-	cd gre-config && make
-	cd yixun && make
+	${MAKE} -C yixun
+	${MAKE} -C gre-config
 
 clean:
-	cd gre-config && make clean
-	cd yixun && make clean
+	${MAKE} clean -C yixun
+	${MAKE} clean -C gre-config
 
 install:
-	cd gre-config && make install
-	cd yixun && make install
+	${MAKE} install -C yixun
+	${MAKE} install -C gre-config
 
 uninstall:
-	cd gre-config && make uninstall
-	cd yixun && make uninstall
+	${MAKE} uninstall -C yixun
+	${MAKE} uninstall -C gre-config
 
