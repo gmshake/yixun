@@ -11,6 +11,7 @@
 
 //#include <stdint.h>
 //#include <netinet/in.h>
+#include <net/ethernet.h> //ETHER_ADDR_LEN
 #include "yixun_config.h"
 
 struct yixun_msg {
@@ -38,7 +39,7 @@ struct yixun_msg {
     in_addr_t auth_server;
     uint32_t auth_server_maskbits;
     in_addr_t msg_server;
-    uint8_t eth_addr[6];
+    uint8_t eth_addr[ETHER_ADDR_LEN];
     size_t s_buff_len;
     char s_buff[S_BUF_LEN];
     char server_info[SEGMENT_MAX_LEN + (SEGMENT_MAX_LEN >> 1)];
