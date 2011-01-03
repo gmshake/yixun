@@ -32,6 +32,7 @@ struct yixun_msg {
     uint32_t download_band;
     
     /* internal use */
+    int last_op;
     int pre_config_done;
     int make_send_buff_done;
     in_addr_t auth_server;

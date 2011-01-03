@@ -124,9 +124,8 @@ static int yixun_log_op(int op, struct yixun_msg *msg)
 {
     int rval = 0;
     /* 重置发送缓冲区信息 */
-    static int lastop = 0;
-    if (op != lastop) {
-        lastop = op;
+    if (op != msg->last_op) {
+        msg->last_op = op;
         msg->make_send_buff_done = 0;
         bzero(msg->s_buff, sizeof(msg->s_buff));
     }
