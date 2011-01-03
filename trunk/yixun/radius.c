@@ -704,6 +704,7 @@ static int connect_tm(int socket, \
                     break;
                 } else {
                     dprintf("connect_tm: Timeout in select() - Cancelling!\n");
+                    errno = ETIMEDOUT;
                     return -1;
                 }
             } while (1);
