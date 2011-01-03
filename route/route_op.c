@@ -11,7 +11,11 @@
 #include <sys/ioctl.h> // ioctl()
 #include <sys/socket.h> // place it before <net/if.h> struct sockaddr
 #include <net/if.h> //struct ifreq
+
+#if defined(__APPLE__) || defined(__FreeBSD__)
 #include <net/if_dl.h> //struct sockaddr_dl
+#endif
+
 #include <netinet/in.h> //IPPROTO_GRE sturct sockaddr_in INADDR_ANY
 #include <arpa/inet.h> // inet_addr()
 #include <net/route.h> // struct rt_msghdr
@@ -19,6 +23,7 @@
 
 #include <errno.h>
 
+#if defined(__APPLE__) || defined(__FreeBSD__)
 static int find_if_with_name(const char *iface, struct sockaddr_dl *out);
 static int route_op(u_char op, in_addr_t *dst, in_addr_t *mask, in_addr_t *gateway, char *iface);
 
@@ -283,23 +288,44 @@ end:
     return err;
 #undef MAX_INDEX
 }
+#endif //#if defined(__APPLE__) || defined(__FreeBSD__)
 
 int route_get(in_addr_t *dst, in_addr_t *mask, in_addr_t *gateway, char iface[])
 {
+#if defined(__APPLE__) || defined(__FreeBSD__)
     return route_op(RTM_GET, dst, mask, gateway, iface);
+#else
+    printf("%s: todo...\n", __FUNCTION__);
+    return 0;
+#endif
 }
 
 int route_add(in_addr_t dst, in_addr_t mask, in_addr_t gateway, const char *iface)
 {
+#if defined(__APPLE__) || defined(__FreeBSD__)
     return route_op(RTM_ADD, &dst, &mask, &gateway, (char *)iface);
+#else
+    printf("%s: todo...\n", __FUNCTION__);
+    return -1;
+#endif
 }
 
 int route_change(in_addr_t dst, in_addr_t mask, in_addr_t gateway, const char *iface)
 {
+#if defined(__APPLE__) || defined(__FreeBSD__)
     return route_op(RTM_CHANGE, &dst, &mask, &gateway, (char *)iface);
+#else
+    printf("%s: todo...\n", __FUNCTION__);
+    return -1;
+#endif
 }
 
 int route_delete(in_addr_t dst, in_addr_t mask)
 {
+#if defined(__APPLE__) || defined(__FreeBSD__)
     return route_op(RTM_DELETE, &dst, &mask, 0, NULL);
+#else
+    printf("%s: todo...\n", __FUNCTION__);
+    return -1;
+#endif
 }

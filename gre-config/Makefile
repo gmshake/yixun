@@ -21,8 +21,8 @@ OBJS = ../route/route_op.o
 
 PROGS = gre-config
 
-.PHONY:all
-	all: ${PROGS}
+.PHONY:all install uninstall clean
+all: ${PROGS}
 
 gre-config: ${OBJS} main.o
 	${CC} ${CFLAGS} ${LIBINC} -o $@ main.o ${OBJS} ${LIBS}
@@ -36,5 +36,4 @@ uninstall:
 
 clean:
 	-rm -f ${PROGS} main.o ${OBJS}
-
 

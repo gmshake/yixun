@@ -1,9 +1,12 @@
 #import "yiXunGUI.h"
 
+#include <arpa/inet.h>
 #include "common_logs.h"
 #include "radius.h"
 #include "login_state.h"
-#include "my_inet.h"
+
+#include "common_macro.h"
+
 //#include "listen_thread.h"
 
 BOOL settingChanged = NO;

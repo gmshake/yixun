@@ -13,7 +13,6 @@
 		591F5A1D1243448800822361 /* print_hex.c in Sources */ = {isa = PBXBuildFile; fileRef = 591F5A161243448800822361 /* print_hex.c */; };
 		591F5A1E1243448800822361 /* get_ip_mac.c in Sources */ = {isa = PBXBuildFile; fileRef = 591F5A181243448800822361 /* get_ip_mac.c */; };
 		591F5CC31243A09700822361 /* encode_password.c in Sources */ = {isa = PBXBuildFile; fileRef = 591F5CC21243A09700822361 /* encode_password.c */; };
-		5921D41E124F0A8F00B44091 /* my_inet.c in Sources */ = {isa = PBXBuildFile; fileRef = 5921D41D124F0A8F00B44091 /* my_inet.c */; };
 		5921E271124DA16300C65C2A /* yiXunGUI.m in Sources */ = {isa = PBXBuildFile; fileRef = 59201017124CC4BA0037523C /* yiXunGUI.m */; };
 		59378B27123FC3B00092E11E /* radius.c in Sources */ = {isa = PBXBuildFile; fileRef = 59378B26123FC3B00092E11E /* radius.c */; };
 		5967E2811258DA9D00CECE2E /* common_logs.c in Sources */ = {isa = PBXBuildFile; fileRef = 5967E2801258DA9D00CECE2E /* common_logs.c */; };
@@ -44,8 +43,6 @@
 		591F5CC21243A09700822361 /* encode_password.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = encode_password.c; sourceTree = "<group>"; };
 		59201017124CC4BA0037523C /* yiXunGUI.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = yiXunGUI.m; sourceTree = "<group>"; };
 		59201018124CC4BA0037523C /* yiXunGUI.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = yiXunGUI.h; sourceTree = "<group>"; };
-		5921D41C124F0A8F00B44091 /* my_inet.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = my_inet.h; sourceTree = "<group>"; };
-		5921D41D124F0A8F00B44091 /* my_inet.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = my_inet.c; sourceTree = "<group>"; };
 		59378B25123FC3B00092E11E /* radius.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = radius.h; sourceTree = "<group>"; };
 		59378B26123FC3B00092E11E /* radius.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = radius.c; sourceTree = "<group>"; };
 		5967E27F1258DA9D00CECE2E /* common_logs.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = common_logs.h; sourceTree = "<group>"; };
@@ -82,8 +79,6 @@
 				591F5A181243448800822361 /* get_ip_mac.c */,
 				59378B25123FC3B00092E11E /* radius.h */,
 				59378B26123FC3B00092E11E /* radius.c */,
-				5921D41C124F0A8F00B44091 /* my_inet.h */,
-				5921D41D124F0A8F00B44091 /* my_inet.c */,
 				59B1BF221257104600CECA5A /* common_macro.h */,
 				5967E27F1258DA9D00CECE2E /* common_logs.h */,
 				5967E2801258DA9D00CECE2E /* common_logs.c */,
@@ -228,7 +223,6 @@
 				591F5CC31243A09700822361 /* encode_password.c in Sources */,
 				5921E271124DA16300C65C2A /* yiXunGUI.m in Sources */,
 				590F1500124DC0F90088D3FB /* login_state.c in Sources */,
-				5921D41E124F0A8F00B44091 /* my_inet.c in Sources */,
 				5967E2811258DA9D00CECE2E /* common_logs.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

@@ -564,17 +564,19 @@ static int get_parameters(char *buff, struct yixun_msg *msg)
             case s_sinfo:
             {
                 bzero(msg->server_info, sizeof(msg->server_info));
+                size_t len = p->length - sizeof(struct rds_segment) < sizeof(msg->server_info) ? \
+                    p->length - sizeof(struct rds_segment) - 2 : sizeof(msg->server_info) - 2;
+                
                 int rval = convert_code("GB18030", "UTF-8", \
                                         p->content, strlen(p->content), \
-                                        msg->server_info, p->length - sizeof(struct rds_segment) < sizeof(msg->server_info) ? \
-                                        p->length - sizeof(struct rds_segment) : sizeof(msg->server_info));
+                                        msg->server_info, len);
                 if (rval != 0) dprintf("Warning, convert_code returned %d\n", rval);
                 
                 strcat(msg->server_info, "\n");
 
                 int i = 0;
                 while(error_info_str[i] != NULL) {
-                    if (strnstr(msg->server_info, error_info_str[i], sizeof(msg->server_info)) != NULL)
+                    if (strstr(msg->server_info, error_info_str[i]) != NULL)
                         return e_user + i;
                     i++;
                 }

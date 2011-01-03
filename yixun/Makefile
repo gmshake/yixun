@@ -28,7 +28,7 @@ all: ${PROGS}
 
 yixun: ${OBJS} main.o
 	${CC} ${CFLAGS} ${LIBINC} -o $@ main.o ${OBJS} ${LIBS}
-	
+
 install:
 	test -d ${BASE} || mkdir -p ${BASE}
 	install ${PROGS} ${BASE}
@@ -41,3 +41,4 @@ libclean:
 
 clean:
 	-rm -f ${PROGS} main.o ${OBJS}
+
