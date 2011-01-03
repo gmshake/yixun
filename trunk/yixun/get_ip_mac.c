@@ -11,8 +11,12 @@
 #include <sys/ioctl.h>  // SIOCGIFCONF, SIOCGIFADDR
 
 #include <net/if.h>     //ifreq, ifconf
+
+#if defined(__APPLE__) || defined(__FreeBSD__)
 #include <net/if_dl.h>  // sockaddr_dl...
 #include <net/if_types.h>       //IFT_ETHER
+#endif
+
 #include <netinet/in.h> // struct sockaddr_in
 
 #include "common_macro.h"
@@ -25,7 +29,7 @@
 int get_ip_mac_by_socket(int socket, in_addr_t *address,   uint8_t eth_addr[]);
 int get_ip_mac_by_name(const char *ifname, in_addr_t *addr, uint8_t eth_addr[]); 
 
-int get_ip_mac_by_socket(int socket, in_addr_t *address,   uint8_t eth_addr[])
+int get_ip_mac_by_socket(int socket, in_addr_t *ip_addr,   uint8_t eth_addr[])
 {
     struct sockaddr_in sa_addr;
     socklen_t len = sizeof(struct sockaddr_in);
@@ -35,44 +39,54 @@ int get_ip_mac_by_socket(int socket, in_addr_t *address,   uint8_t eth_addr[])
         log_perror("Error getsockname");
         return -1;
     }
-    if (address != NULL)
-        *address = sa_addr.sin_addr.s_addr;
+    if (ip_addr != NULL)
+        *ip_addr = sa_addr.sin_addr.s_addr;
     
     if (eth_addr == NULL) // IE: do not get mac_address
         return 0;
         
     char buffer[IFCONF_BUF_LEN];
     struct ifconf ifc;
-    ifc.ifc_len=IFCONF_BUF_LEN;
-    ifc.ifc_buf=buffer;
+    ifc.ifc_len = IFCONF_BUF_LEN;
+    ifc.ifc_buf = buffer;
     
-    if(ioctl(socket,SIOCGIFCONF,&ifc)<0)
+    if (ioctl(socket, SIOCGIFCONF, &ifc) < 0)
     {
         log_perror("Error ioctl");
         return -2;
     }
     
-    if(ifc.ifc_len<=IFCONF_BUF_LEN)
+    if (ifc.ifc_len <= IFCONF_BUF_LEN)
     {
         struct ifreq ifr, *ifrq = ifc.ifc_req;
         bzero(&ifr, sizeof(ifr));
-        int space=0;
+        int space = 0;
         do
         {
-            struct sockaddr *sa=(struct sockaddr *)&ifrq->ifr_addr;
-            strcpy(ifr.ifr_name, ifrq->ifr_name);
-            if (ioctl(socket, SIOCGIFADDR, &ifr) == 0)
+            struct sockaddr *sa = (struct sockaddr *)&ifrq->ifr_addr;
+#if defined(__APPLE__) || defined(__FreeBSD__)
+            if (((struct sockaddr_dl *)sa)->sdl_type == IFT_ETHER)
+#endif
             {
-                if (((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr.s_addr == sa_addr.sin_addr.s_addr ) // found it
+                strcpy(ifr.ifr_name, ifrq->ifr_name);
+                if (ioctl(socket, SIOCGIFADDR, &ifr) == 0)
                 {
-                    memcpy (eth_addr, LLADDR((struct sockaddr_dl *)sa), 6);
-                    return 0;
+                    if (((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr.s_addr == sa_addr.sin_addr.s_addr ) // found it
+                    {
+#if defined(__APPLE__) || defined(__FreeBSD__)
+                        memcpy (eth_addr, LLADDR((struct sockaddr_dl *)sa), 6);
+#else
+                        if (ioctl(socket, SIOCGIFHWADDR, &ifr) == 0)
+                            memcpy(eth_addr, ifr.ifr_hwaddr.sa_data, ETHER_ADDR_LEN);
+#endif
+                        return 0;
+                    }
                 }
             }
             
-            ifrq=(struct ifreq*)(sa->sa_len + (caddr_t)&ifrq->ifr_addr);
-            space+=(int)sa->sa_len + sizeof(ifrq->ifr_name);
-        }while(space < ifc.ifc_len);
+            ifrq = (struct ifreq*)(sa->sa_len + (caddr_t)&ifrq->ifr_addr);
+            space += (int)sa->sa_len + sizeof(ifrq->ifr_name);
+        } while (space < ifc.ifc_len);
         
         log_err("Cannot find MAC addr...\n");
         return -3;
@@ -83,13 +97,9 @@ int get_ip_mac_by_socket(int socket, in_addr_t *address,   uint8_t eth_addr[])
     return -4;
 }
 
-int get_ip_mac_by_name(const char *ifname, in_addr_t *addr, uint8_t eth_addr[])
+
+int get_ip_mac_by_name(const char *ifname, in_addr_t *ip_addr, uint8_t eth_addr[])
 {
-    if (ifname == NULL)
-    {
-        log_err("Error: ifname is NULL\n");
-        return -1;
-    }
     int sockfd;
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
     {
@@ -97,63 +107,79 @@ int get_ip_mac_by_name(const char *ifname, in_addr_t *addr, uint8_t eth_addr[])
         return -1;
     }
     
-    uint8_t tmp_eth_addr[6];
-    in_addr_t tmp_addr;
-    
-    char buffer[IFCONF_BUF_LEN];
-    struct ifconf ifc;
-    ifc.ifc_len=IFCONF_BUF_LEN;
-    ifc.ifc_buf=buffer;
-
-    if(ioctl(sockfd,SIOCGIFCONF,&ifc)<0)
+    if (ip_addr)
     {
-        log_perror("Error ioctl");
-        goto ERROR;
-    }
-
-    if(ifc.ifc_len<=IFCONF_BUF_LEN)
-    {
-        struct ifreq *ifrq = ifc.ifc_req;
-        int space=0;
-        do
-        {
-            struct sockaddr *sa=&ifrq->ifr_addr;
-
-            if(((struct sockaddr_dl *)sa)->sdl_type==IFT_ETHER)
-            {
-                if (strcmp(ifname, ifrq->ifr_name) == 0)
-                {                  
-                    memcpy (tmp_eth_addr, LLADDR((struct sockaddr_dl *)sa), 6); // Found MAC address
-                    
-                    struct ifreq ifr;
-                    bzero(&ifr, sizeof(ifr));
-                    strncpy(ifr.ifr_name, ifrq->ifr_name, IFNAMSIZ - 1);
-
-                    if(ioctl(sockfd,SIOCGIFADDR,&ifr)<0)
-                    {
-                        log_notice("Notice: no IP address with Interface %s\n", ifr.ifr_name);
-                        tmp_addr = htonl((in_addr_t)0xA9FE0000 | (in_addr_t)(tmp_eth_addr[4] << 8) | (in_addr_t)(tmp_eth_addr[5])); // 没找到IP地址时，用169.254.0.0加上MAC地址的后两字节作为IP
-                    }
-                    else
-                    {
-                        tmp_addr = ((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr.s_addr;  // 找到IP地址
-                    }
-                    
-                    if (eth_addr != NULL) memcpy(eth_addr, tmp_eth_addr, sizeof(tmp_eth_addr)); // Copy MAC address
-                    if (addr != NULL) *addr = tmp_addr; // copy IP address
-                    
-                    return 0;
-                }
-            }
-            ifrq=(struct ifreq*)(sa->sa_len + (caddr_t)&ifrq->ifr_addr);
-            space+=(int)sa->sa_len + sizeof(ifrq->ifr_name);
-            
-        }while(space < ifc.ifc_len);
+        struct ifreq ifr;
+        bzero(&ifr, sizeof(ifr));
+        strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
         
-        log_err("Cannot find device %s.\n", ifname);
-        goto ERROR;
+        if (ioctl(sockfd, SIOCGIFADDR, &ifr) < 0)
+        {
+            log_notice("Notice: no IP address with Interface %s\n", ifr.ifr_name);
+            *ip_addr = 0;
+        }
+        else
+            *ip_addr = ((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr.s_addr;  // Found IP address
     }
-    log_err("Error: ifc.ifc_len is greater then IFCONF_BUF_LEN:%d\n", IFCONF_BUF_LEN);
+    
+    if (eth_addr)
+    {
+#if defined(__APPLE__) || defined(__FreeBSD__)
+        char buffer[IFCONF_BUF_LEN];
+        struct ifconf ifc;
+        ifc.ifc_len = IFCONF_BUF_LEN;
+        ifc.ifc_buf = buffer;
+        
+        if (ioctl(sockfd, SIOCGIFCONF, &ifc) < 0)
+        {
+            log_perror("Error ioctl");
+            goto ERROR;
+        }
+        
+        if (ifc.ifc_len <= IFCONF_BUF_LEN)
+        {
+            struct ifreq *ifrq = ifc.ifc_req;
+            int space = 0;
+            do
+            {
+                struct sockaddr *sa = &ifrq->ifr_addr;
+                
+                if (((struct sockaddr_dl *)sa)->sdl_type == IFT_ETHER)
+                {
+                    if (strcmp(ifname, ifrq->ifr_name) == 0)
+                    {
+                        memcpy(eth_addr, LLADDR((struct sockaddr_dl *)sa), 6); // Found MAC address
+                        goto DONE;
+                    }
+                }
+                ifrq = (struct ifreq*)(sa->sa_len + (caddr_t)&ifrq->ifr_addr);
+                space += (int)sa->sa_len + sizeof(ifrq->ifr_name);
+                
+            } while (space < ifc.ifc_len);
+            
+            log_err("Cannot find device %s.\n", ifname);
+            goto ERROR;
+        }
+        log_err("Error: ifc.ifc_len is greater then IFCONF_BUF_LEN:%d\n", IFCONF_BUF_LEN);
+    
+#else // linux
+        struct ifreq ifr;
+        bzero(&ifr, sizeof(ifr));
+        strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
+        
+        //get MAC 
+        if (ioctl(sockfd, SIOCGIFHWADDR, &ifr) < 0)
+        {
+            log_perror("ioctl");
+            goto ERROR;
+        }
+        memcpy(eth_addr, ifr.ifr_hwaddr.sa_data, ETHER_ADDR_LEN);
+#endif
+    }
+    
+DONE:
+    close(sockfd);
+    return 0;
 ERROR:
     close(sockfd);
     return -1;

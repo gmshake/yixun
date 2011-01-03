@@ -591,9 +591,6 @@ int remove_gre_if(in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remot
 }
 
 
-
-
-
 /*
 static void free_rt_list(struct rt_list *list)
 {
