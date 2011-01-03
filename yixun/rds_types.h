@@ -23,7 +23,7 @@ struct rds_packet_header //radius包头
 #define RADIUS_HEADER_FLAG 0x5f
 	uint8_t type;   // rds_header_type
 	uint16_t length; // extra segment length, network order
-	uint32_t zero;   // to be zeroed
+	uint32_t pad;   // to be zeroed
 	char extra[0];
 };
 
@@ -33,7 +33,7 @@ struct rds_segment { // 消息协议中的段
 #define SERVER_SEGMENT_FLAG 0x15
 	uint8_t type;   // rds_segment_type
     uint8_t length;  // total length, including rds_segment header
-	uint8_t zero;    // to be zeroed
+	uint8_t pad;    // to be zeroed
 	char content[0];
 };
 #pragma pack()

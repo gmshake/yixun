@@ -4,15 +4,29 @@
 #include <string.h>
 #include <syslog.h>
 
-#include <arpa/inet.h> // inet_aton()
 #include <sys/ioctl.h> // ioctl()
 #include <sys/socket.h> // place it before <net/if.h> struct sockaddr
+#if defined(__FreeBSD__)
+#include <sys/module.h> 
+#include <sys/linker.h> // kldload()
+#endif
+
 #include <net/if.h> //struct ifreq
+#if defined(__FreeBSD__)
+#include <net/if_var.h>
+#endif
 
 #include <netinet/in.h> //IPPROTO_GRE sturct sockaddr_in INADDR_ANY
+#if defined(__APPLE__) || defined(__FreeBSD__)
 #include <netinet/in_var.h> //struct in_aliasreq
-#include <netinet/ip.h> // struct ip
-#include <arpa/inet.h> // inet_addr()
+#endif
+
+#include <arpa/inet.h> // inet_aton()
+#include <netinet/ip.h> // struct ip, /* linux: struct iphdr */
+
+#if defined(__linux__)
+#include <linux/if_tunnel.h> //SIOCADDTUNNEL, SIOCGETTUNNEL, SIOCDELTUNNEL
+#endif
 
 #include <errno.h>
 
@@ -341,6 +355,7 @@ int find_if_with_addr(char ifname[], in_addr_t src, in_addr_t dst, in_addr_t loc
         bzero(&ifrq, sizeof(ifrq));
         sprintf(ifrq.ifr_name, "gre%d", i);
         
+#if defined(__APPLE__) || defined(__FreeBSD__)
         /* get tunnel src address */
         if (ioctl(sock, SIOCGIFPSRCADDR, &ifrq) < 0)
             continue;
@@ -352,6 +367,17 @@ int find_if_with_addr(char ifname[], in_addr_t src, in_addr_t dst, in_addr_t loc
             continue;
         if (((struct sockaddr_in *)&ifrq.ifr_addr)->sin_addr.s_addr != dst)
             continue;
+#else // Linux
+        struct ip_tunnel_parm parm;
+        bzero(&parm, sizeof(struct ip_tunnel_parm));
+        ifrq.ifr_ifru.ifru_data = (void *) &parm;
+        if (ioctl(sock, SIOCGETTUNNEL, &ifrq) < 0)
+            continue;
+        if (parm.iph.protocol != IPPROTO_GRE)
+            continue;
+        if (parm.iph.daddr != dst || parm.iph.saddr != src)
+            continue;
+#endif
 
         /* get if local address */
         if (ioctl(sock, SIOCGIFADDR, &ifrq) < 0)
@@ -387,14 +413,16 @@ int set_if_addr_tunnel(char ifname[], in_addr_t src, in_addr_t dst, in_addr_t lo
     struct ifreq ifrq;
     bzero(&ifrq, sizeof(ifrq));
 	strncpy(ifrq.ifr_name, ifname, IFNAMSIZ);
-    
+
+#if defined(__APPLE__) || defined(__FreeBSD__)
     if (ioctl(sock, SIOCDIFPHYADDR, &ifrq) < 0) {
         if (errno != EADDRNOTAVAIL) {
             perror("set_if_addr_tunnel: delete tunnel addr");
             goto ERROR;
         }
     }
-    
+#endif
+
     if (ioctl(sock, SIOCDIFADDR, &ifrq) < 0) {
         if (errno != EADDRNOTAVAIL) {
             perror("set_if_addr_tunnel: delete if addr");
@@ -403,6 +431,7 @@ int set_if_addr_tunnel(char ifname[], in_addr_t src, in_addr_t dst, in_addr_t lo
     }
     
     /* set tunnel src and dst address */
+#if defined(__APPLE__) || defined(__FreeBSD__)
     struct in_aliasreq in_req;
     bzero(&in_req, sizeof(struct in_aliasreq));
     
@@ -419,6 +448,18 @@ int set_if_addr_tunnel(char ifname[], in_addr_t src, in_addr_t dst, in_addr_t lo
         perror("set_if_addr_tunnel: set if tunnel address");
         goto ERROR;
     }
+#else
+    struct ip_tunnel_parm parm;
+    bzero(&parm, sizeof(struct ip_tunnel_parm));
+    parm.iph.protocol = IPPROTO_GRE;
+    parm.iph.daddr = dst;
+    parm.iph.saddr = src;
+    ifrq.ifr_ifru.ifru_data = (void *) &parm;
+    if (ioctl(sock, SIOCADDTUNNEL, &ifrq) < 0) {
+        perror("set_if_addr_tunnel: set if tunnel address");
+        goto ERROR;
+    }
+#endif
     
     /* set if local address */
     struct sockaddr_in sa;
@@ -427,7 +468,9 @@ int set_if_addr_tunnel(char ifname[], in_addr_t src, in_addr_t dst, in_addr_t lo
     
     sa.sin_addr.s_addr = local;
     bcopy(&sa, &ifrq.ifr_addr, sizeof(sa));
+#if defined(__APPLE__) || defined(__FreeBSD__)
     ((struct sockaddr_in *)&ifrq.ifr_addr)->sin_len = sizeof(struct sockaddr_in);
+#endif
     if (ioctl(sock, SIOCSIFADDR, &ifrq) < 0) {
         perror("set_if_addr_tunnel: set if local address");
         goto ERROR;
@@ -436,7 +479,9 @@ int set_if_addr_tunnel(char ifname[], in_addr_t src, in_addr_t dst, in_addr_t lo
     /* set if p-p address */
     sa.sin_addr.s_addr = remote;
     bcopy(&sa, &ifrq.ifr_addr,sizeof(sa));
+#if defined(__APPLE__) || defined(__FreeBSD__)
     ((struct sockaddr_in *)&ifrq.ifr_addr)->sin_len = sizeof(struct sockaddr_in);
+#endif
     if (ioctl(sock, SIOCSIFDSTADDR, &ifrq) < 0) {
         perror("set_if_addr_tunnel: set if remote address");
         goto ERROR;
@@ -446,7 +491,9 @@ int set_if_addr_tunnel(char ifname[], in_addr_t src, in_addr_t dst, in_addr_t lo
         /* set if netmask */
         ifrq.ifr_addr.sa_family = AF_INET;
         bcopy(&netmask, &((struct sockaddr_in *)&ifrq.ifr_addr)->sin_addr, sizeof(netmask));
+#if defined(__APPLE__) || defined(__FreeBSD__)
         ((struct sockaddr_in *)&ifrq.ifr_addr)->sin_len = sizeof(netmask);
+#endif
         if (ioctl(sock, SIOCSIFNETMASK, &ifrq) < 0) {
             perror("set_if_addr_tunnel: set netmask");
             goto ERROR;
@@ -473,6 +520,7 @@ ERROR:
     return -1;
 }
 
+/*
 int set_if_tunnel(char ifname[], in_addr_t src, in_addr_t dst)
 {
     int sock;    
@@ -499,10 +547,11 @@ ERROR:
     close(sock);
     return -1;
 }
+*/
 
 int delete_if_addr_tunnel(char ifname[])
 {
-    int sock;    
+    int sock;
     if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         perror("delete_if_addr_tunnel: socket");
         return -1;
@@ -526,14 +575,26 @@ int delete_if_addr_tunnel(char ifname[])
         }
     }
 
+#if defined(__APPLE__) || defined(__FreeBSD__)
     bzero(&ifrq.ifr_addr, sizeof(struct sockaddr));
-    
     if (ioctl(sock, SIOCDIFPHYADDR, &ifrq) < 0) {
         if (errno != EADDRNOTAVAIL) {
             perror("delete_if_addr_tunnel: delete tunnel addr");
             goto ERROR;
         }
     }
+#else
+    struct ip_tunnel_parm parm;
+    bzero(&parm, sizeof(struct ip_tunnel_parm));
+    parm.iph.protocol = IPPROTO_GRE;
+    ifrq.ifr_ifru.ifru_data = (void *) &parm;
+    if (ioctl(sock, SIOCDELTUNNEL, &ifrq) < 0) {
+        if (errno != EADDRNOTAVAIL) {
+            perror("delete_if_addr_tunnel: delete tunnel addr");
+            goto ERROR;
+        }
+    }
+#endif
         
     if (ioctl(sock, SIOCSIFDSTADDR, &ifrq) < 0) {
         if (errno != EADDRNOTAVAIL) {
@@ -556,6 +617,79 @@ ERROR:
     return -1;
 }
 
+#if defined(__FreeBSD__)
+void ifmaybeload(const char *name)
+{
+#define MOD_PREFIX_LEN          3       /* "if_" */
+    struct module_stat mstat;
+    int fileid, modid;
+    char ifkind[IFNAMSIZ + MOD_PREFIX_LEN], ifname[IFNAMSIZ], *dp;
+    const char *cp;
+    
+    /* loading suppressed by the user */
+    if (noload)
+        return;
+    
+    /* trim the interface number off the end */
+    strlcpy(ifname, name, sizeof(ifname));
+    for (dp = ifname; *dp != 0; dp++)
+        if (isdigit(*dp)) {
+            *dp = 0;
+            break;
+        }
+    
+    /* turn interface and unit into module name */
+    strcpy(ifkind, "if_");
+    strlcpy(ifkind + MOD_PREFIX_LEN, ifname,
+            sizeof(ifkind) - MOD_PREFIX_LEN);
+    
+    /* scan files in kernel */
+    mstat.version = sizeof(struct module_stat);
+    for (fileid = kldnext(0); fileid > 0; fileid = kldnext(fileid)) {
+        /* scan modules in file */
+        for (modid = kldfirstmod(fileid); modid > 0;
+             modid = modfnext(modid)) {
+            if (modstat(modid, &mstat) < 0)
+                continue;
+            /* strip bus name if present */
+            if ((cp = strchr(mstat.name, '/')) != NULL) {
+                cp++;
+            } else {
+                cp = mstat.name;
+            }
+            /* already loaded? */
+            if (strncmp(ifname, cp, strlen(ifname) + 1) == 0 ||
+                strncmp(ifkind, cp, strlen(ifkind) + 1) == 0)
+                return;
+        }
+    }
+    
+    /* not present, we should try to load it */
+    kldload(ifkind);
+}
+
+
+static int bsd_gre_if_clonecreate(char name[])
+{
+    struct ifreq ifr;
+    
+    memset(&ifr, 0, sizeof(ifr));
+    (void) strlcpy(ifr.ifr_name, "gre", sizeof(ifr.ifr_name));
+    if (ioctl(s, SIOCIFCREATE2, &ifr) < 0) {
+        perror("SIOCIFCREATE2");
+        return -1;
+    }
+    
+    if (strncmp("gre", ifr.ifr_name, sizeof(ifr.ifr_name)) != 0) {
+        strlcpy(name, ifr.ifr_name, sizeof(ifr.ifr_name));
+#ifdef DEBUG
+        printf("%s\n", name);
+#endif
+        return 0;
+    }
+    return -2;
+}
+#endif
 
 int add_gre_if(in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote, in_addr_t mask)
 {

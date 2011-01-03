@@ -426,8 +426,8 @@ int accept_client(struct yixun_msg *msg)
  */
 void print_config(struct yixun_msg *msg)
 {
-    struct in_addr a[4];
-    char p1[4][20];
+    struct in_addr a[5];
+    char p1[5][20];
     
     a[0].s_addr = msg->gre_src; a[1].s_addr = msg->gre_dst; a[2].s_addr = msg->gre_local; a[3].s_addr = msg->gre_remote; a[4].s_addr = msg->gre_netmask;
     int i;
@@ -607,7 +607,7 @@ make_rds_packet(char packet[], enum rds_header_type type)
     struct rds_packet_header *p = (struct rds_packet_header *)packet;
     p->flag = RADIUS_HEADER_FLAG; //Always be 0x5f
     p->type = (uint8_t)type;
-    p->zero = 0;
+    p->pad = 0;
     return p;
 }
 
@@ -633,7 +633,7 @@ add_segment(char packet[], enum rds_segment_type type, uint8_t length, uint8_t c
     s->flag = CLINET_SEGMENT_FLAG;
     s->type = type;
     s->length = length + sizeof(struct rds_segment); //包含segment头的长度
-    s->zero = 0;
+    s->pad = 0;
     
     if (content_len > length)
         content_len = length;
