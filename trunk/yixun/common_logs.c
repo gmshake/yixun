@@ -89,8 +89,7 @@ int log_log(const char *fmt, ...)
     va_list args;
     va_start(args, fmt);
     
-    switch (log_type)
-    {
+    switch (log_type) {
         case LDAEMON:
             vsyslog(LOG_NOTICE, fmt, args);
             break;
@@ -123,8 +122,7 @@ int log_perror(const char *fmt, ...)
     
     va_end(args);
     
-    switch (log_type)
-    {
+    switch (log_type) {
         case LDAEMON:
             syslog(LOG_ERR, buff);
             break;
@@ -153,8 +151,7 @@ int log_critical(const char *fmt, ...)
     if (cnt < sizeof(newfmt))
         cnt += my_strcpy(newfmt + cnt, fmt, sizeof(newfmt) - cnt);
         
-    switch (log_type)
-    {
+    switch (log_type) {
         case LDAEMON:
             vsyslog(LOG_CRIT, newfmt, args);
             break;
@@ -183,8 +180,7 @@ int log_err(const char *fmt, ...)
     if (cnt < sizeof(newfmt))
         cnt += my_strcpy(newfmt + cnt, fmt, sizeof(newfmt) - cnt);
     
-    switch (log_type)
-    {
+    switch (log_type) {
         case LDAEMON:
             vsyslog(LOG_ERR, newfmt, args);
             break;
@@ -213,8 +209,7 @@ int log_warning(const char *fmt, ...)
     if (cnt < sizeof(newfmt))
         cnt += my_strcpy(newfmt + cnt, fmt, sizeof(newfmt) - cnt);
     
-    switch (log_type)
-    {
+    switch (log_type) {
         case LDAEMON:
             vsyslog(LOG_WARNING, newfmt, args);
             break;
@@ -243,8 +238,7 @@ int log_notice(const char *fmt, ...)
     if (cnt < sizeof(newfmt))
         cnt += my_strcpy(newfmt + cnt, fmt, sizeof(newfmt) - cnt);
     
-    switch (log_type)
-    {
+    switch (log_type) {
         case LDAEMON:
             vsyslog(LOG_NOTICE, newfmt, args);
             break;
@@ -273,10 +267,11 @@ int log_info(const char *fmt, ...)
     if (cnt < sizeof(newfmt))
         cnt += my_strcpy(newfmt + cnt, fmt, sizeof(newfmt) - cnt);
     
-    switch (log_type)
-    {
+    switch (log_type) {
         case LDAEMON:
-            //vsyslog(LOG_INFO, newfmt, args); LOG_INFO wouldn't log on Leopard due to the setting in /etc/syslog.conf
+            /* vsyslog(LOG_INFO, newfmt, args); LOG_INFO wouldn't log on Leopard
+             * due to the setting in /etc/syslog.conf
+             */
             vsyslog(LOG_NOTICE, newfmt, args);
             break;
         case LCONSOLE:
@@ -304,8 +299,7 @@ int log_debug(const char *fmt, ...)
     if (cnt < sizeof(newfmt))
         cnt += my_strcpy(newfmt + cnt, fmt, sizeof(newfmt) - cnt);
     
-    switch (log_type)
-    {
+    switch (log_type) {
         case LDAEMON:
             vsyslog(LOG_DEBUG, newfmt, args);
             break;
@@ -336,15 +330,13 @@ int log_hex(const void *data, size_t cnt)
 {
     size_t bufflen = sizeof(char) * (cnt * 3 + cnt / 16 + 1); // alloc ONE more: \0
     char *buff = (char *)malloc(bufflen);
-    if (buff == NULL)
-    {    
+    if (buff == NULL) {    
         log_perror("[log_hex] malloc");
         return -1;
     }
     int rval = hex_to_ascii(buff, bufflen, data, cnt);
     
-    switch (log_type)
-    {
+    switch (log_type) {
         case LDAEMON:
             syslog(LOG_DEBUG, buff);
             break;
@@ -363,8 +355,7 @@ int log_hex(const void *data, size_t cnt)
 
 void print_info()
 {
-    switch (log_type)
-    {
+    switch (log_type) {
         case LDAEMON:
             break;
         case LCONSOLE:
@@ -372,8 +363,7 @@ void print_info()
             break;
         case LBUFF:
             if (pthread_mutex_trylock(&mutex)) pthread_mutex_lock(&mutex);
-            if (buff_not_empty())
-            {
+            if (buff_not_empty()) {
                 fprintf(stdout, get_msg());
                 trunc_buff();
                 fflush(stdout);
@@ -427,32 +417,24 @@ static void append_msg(const char *msg)
     if (pthread_mutex_trylock(&mutex)) pthread_mutex_lock(&mutex);
 
     int cnt = my_strcpy(tail, msg, msg_buff_end - tail);
-    if (tail >= head)
-    {
+    if (tail >= head) {
         tail += cnt;
-        if (tail + 1 >= msg_buff_end)
-        {
+        if (tail + 1 >= msg_buff_end) {
             msg += cnt;
             cnt = my_strcpy(msg_buff, msg, head - tail);
             tail = msg_buff + cnt;
             if (tail >= head)
                 head = tail + 1;
         }
-    }
-    else
-    {
+    } else {
         tail += cnt;
-        if (tail >= head)
-        {
-            if (tail + 1 >= msg_buff_end) // reach end
-            {
+        if (tail >= head) {
+            if (tail + 1 >= msg_buff_end) {// reach end
                 msg += cnt;
                 cnt = my_strcpy(msg_buff, msg, head - tail);
                 tail = msg_buff + cnt;
                 head = tail + 1;
-            }
-            else
-            {
+            } else {
                 head = tail + 1;
             }
         }
@@ -467,8 +449,7 @@ static char * get_msg()
     static char buff[INFO_BUF_LEN];
     if (tail >= head)
         my_strcpy(buff, head, tail - head + 1);
-    else
-    {
+    else {
         char *p = buff;
         p += my_strcpy(p, head, msg_buff_end - head);
         my_strcpy(p, msg_buff, tail - msg_buff + 1);
@@ -507,9 +488,8 @@ static size_t my_strcpy(char *dst, const char *src, size_t n)
 {
     size_t i = 0;
     while (++i < n && *src != '\0')
-    {
         *dst++ = *src++;
-    }
+    
     *dst = '\0';
     return i - 1;
 }

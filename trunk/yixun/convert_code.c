@@ -20,14 +20,13 @@ int convert_code(char *from_charset, char *to_charset,
 {
     iconv_t cd;
     cd = iconv_open(to_charset,from_charset);
-    if (cd==0)
-    {
+    if (cd==0) {
         log_perror("Error iconv_open");
         return -1;
     }
+    
     memset(outbuf,0,outlen);
-    if (iconv (cd, &inbuf, &inlen, &outbuf, &outlen) == (size_t)-1)
-	{
+    if (iconv (cd, &inbuf, &inlen, &outbuf, &outlen) == (size_t)-1) {
         log_perror("Error iconv");
 		iconv_close(cd);
 		return -1;
