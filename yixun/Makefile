@@ -1,5 +1,5 @@
 #
-# yixun for MacOSX
+# yixun for MacOSX/FreeBSD/Linux
 #
 # Makefile
 #

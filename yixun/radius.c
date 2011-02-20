@@ -57,16 +57,12 @@ static struct rds_packet_header * make_rds_packet(char packet[], enum rds_header
 //为发送包添加相应字段
 static void add_segment(char packet[], enum rds_segment_type type, uint8_t length, uint8_t content_len, const char *content);
 
-
 // 带连接超时的connect
-static int connect_tm(int socket, \
-                      const struct sockaddr *addr,
-                      socklen_t addr_len, \
-                      struct timeval *timeout);
+static int connect_tm(int socket, const struct sockaddr *addr, socklen_t addr_len, struct timeval *timeout);
 
 
 /*
- * pre_config(), pre config necessary infomation
+ * pre_config(), pre-config necessary infomation, check username, pwd etc.
  * @param msg, in/out
  * return 0 on success, otherwise -1;
  */
@@ -171,19 +167,24 @@ static int yixun_log_op(int op, struct yixun_msg *msg)
             case LOGIN:
             {
                 uint8_t *sec_pwd = (uint8_t *)malloc(sizeof(uint8_t) * (strlen(msg->password) + 2));
+                if (sec_pwd == NULL) {
+                    log_perror("[%s] malloc\n", __FUNCTION__);
+                    rval = -1;
+                    goto ERROR;
+                }
                 encode_pwd_with_ip(sec_pwd, msg->password, msg->gre_src);
                 
                 make_rds_packet(msg->s_buff, u_login);
-                add_segment(msg->s_buff,  c_mac, 6, sizeof(msg->eth_addr), (char *)msg->eth_addr);
-                add_segment(msg->s_buff,  c_ip, sizeof(in_addr_t), sizeof(in_addr_t), (char *)&msg->gre_src);
-                add_segment(msg->s_buff,  c_user, MAX_USER_NAME_LEN, strlen(msg->username), (char *)msg->username); //Hack:用户名有长度限制
-                add_segment(msg->s_buff,  c_pwd, strlen((char *)sec_pwd), strlen((char *)sec_pwd), (char *)sec_pwd);
-                add_segment(msg->s_buff,  c_ver, 4, sizeof(version), (char *)version);
-                add_segment(msg->s_buff,  c_zero, 4, sizeof(zeros), (char *)zeros);
+                add_segment(msg->s_buff, c_mac, 6, sizeof(msg->eth_addr), (char *)msg->eth_addr);
+                add_segment(msg->s_buff, c_ip, sizeof(in_addr_t), sizeof(in_addr_t), (char *)&msg->gre_src);
+                add_segment(msg->s_buff, c_user, MAX_USER_NAME_LEN, strlen(msg->username), (char *)msg->username); //Hack:用户名有长度限制
+                add_segment(msg->s_buff, c_pwd, strlen((char *)sec_pwd), strlen((char *)sec_pwd), (char *)sec_pwd);
+                add_segment(msg->s_buff, c_ver, 4, sizeof(version), (char *)version);
+                add_segment(msg->s_buff, c_pad, 4, sizeof(zeros), (char *)zeros);
                 
                 free(sec_pwd);
-            }
                 break;
+            }
             case LOGOUT:
                 make_rds_packet(msg->s_buff, u_logout); //Hack:退出登录和保持活动连接只有这一个地方有差别
                 add_segment(msg->s_buff, c_ip, sizeof(in_addr_t), sizeof(in_addr_t), (char *)&msg->gre_src);
@@ -195,7 +196,9 @@ static int yixun_log_op(int op, struct yixun_msg *msg)
                 add_segment(msg->s_buff, c_user, MAX_USER_NAME_LEN, strlen(msg->username), (char *)msg->username);
                 break;
             default:
+#ifdef DEBUG
                 log_err("[%s] unkown op %d\n", __FUNCTION__, op);
+#endif
                 rval = -2;
                 goto ERROR;
         }
@@ -230,26 +233,33 @@ static int yixun_log_op(int op, struct yixun_msg *msg)
                 goto ERROR;
             }
             
-            int ret = recv(sockfd, r_buff, R_BUF_LEN, 0);
-            if (ret > 0) {
-                if ((rval = do_with_server_info(r_buff, msg, sockfd)) != 0)
-                    goto ERROR;
-            } else {
-                if (ret == 0)
+            ssize_t ret = recv(sockfd, r_buff, R_BUF_LEN, 0);
+            if (ret <= 0) {
+                if (ret == 0) {
                     log_err("[%s] receive: Auth server %s has closed its half side of the connection\n", __FUNCTION__, inet_ntoa(auth_server.sin_addr));
-                else
-                    log_perror("[%s] receive", __FUNCTION__);
+                } else {
+                    if (errno == EAGAIN)
+                        log_err("[%s] recv: time out\n", __FUNCTION__);
+                    else
+                        log_perror("[%s] recv", __FUNCTION__);
+                }
+
                 rval = -1;
                 goto ERROR;
             }
-        }
+            if ((rval = do_with_server_info(r_buff, msg, sockfd)) != 0)
+                goto ERROR;
+            
             break;
+        }
         case LOGOUT:
             break;
         case KEEPALIVE:
             break;
         default:
+#ifdef DEBUG
             log_err("[%s] unkown op %d\n", __FUNCTION__, op);
+#endif
             rval = -1;
             break;
     }
@@ -300,13 +310,13 @@ int start_listen()
 {
     if (is_listening) return sockListen;
 	if ((sockListen = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-		log_perror("[start_listen] socket");
+		log_perror("[%s] socket", __FUNCTION__);
 		return -1;
 	}
 	
 	int opt = 1;
 	if (setsockopt(sockListen, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
-		log_perror("[start_listen] setsockopt");
+		log_perror("[%s] setsockopt", __FUNCTION__);
 		goto ERROR;
 	}
 	
@@ -317,12 +327,12 @@ int start_listen()
 	local.sin_port = htons(RADIUS_PORT);
 	
 	if (bind(sockListen, (struct sockaddr *)&local, sizeof(local)) != 0) {
-		log_perror("[start_listen] Bind");
+		log_perror("[%s] Bind", __FUNCTION__);
 		goto ERROR;
 	}
 	
 	if (listen(sockListen, MAX_CLIENT) != 0) {
-		log_perror("[start_listen] Listen");
+		log_perror("[%s] Listen", __FUNCTION__);
 		goto ERROR;
 	}
 	is_listening = -1;
@@ -405,16 +415,21 @@ int accept_client(struct yixun_msg *msg)
         if (setsockopt(sock_client, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
             log_perror("[%s] setsockopt", __FUNCTION__);
         
-        int ret = recv(sock_client, r_buff, R_BUF_LEN, 0);
+        ssize_t ret = recv(sock_client, r_buff, R_BUF_LEN, 0);
         if (ret <= 0) {
-            if (ret == 0)
-                log_perror("[accept_client] receive: Client %s has closed its half side of the connection\n", inet_ntoa(r_client.sin_addr));
-            else
-                log_perror("[accept_client] receive");
-            return 0;
+            if (ret == 0) {
+                log_perror("[%s] recv: Client %s has closed its half side of the connection\n", __FUNCTION__, inet_ntoa(r_client.sin_addr));
+            } else {
+                if (errno == EAGAIN)
+                    log_err("[%s] recv: time out\n", __FUNCTION__);
+                else
+                    log_perror("[%s] recv", __FUNCTION__);
+            }
+            return -1;
         }
-        ret = do_with_server_info(r_buff, msg, 0);
-        if (ret) close(sock_client);
+
+        if (do_with_server_info(r_buff, msg, 0) < 0)
+            close(sock_client);
     }
     return 0;
 }
@@ -480,7 +495,7 @@ static int do_with_server_info(char buff[], struct yixun_msg *msg, int sockfd)
             }
             
             if (msg->timeout > MAX_TIME_OUT) {
-                log_notice("Server side time out to long:%u\n  use %u instead\n", msg->timeout, MAX_TIME_OUT);
+                log_notice("Server side timeout to long:%u\n  use %u instead\n", msg->timeout, MAX_TIME_OUT);
                 msg->timeout = MAX_TIME_OUT;
             }
             
@@ -553,7 +568,7 @@ static int get_parameters(char *buff, struct yixun_msg *msg)
             case s_mask:
 				msg->gre_netmask = *((in_addr_t *)p->content);
 				break;
-            case s_zero:
+            case s_pad:
                 break;
 			case s_upband:
 				msg->upload_band = ntohl(*((uint32_t *)p->content));
@@ -573,15 +588,15 @@ static int get_parameters(char *buff, struct yixun_msg *msg)
                 if (rval != 0) dprintf("Warning, convert_code returned %d\n", rval);
                 
                 strcat(msg->server_info, "\n");
-
-                int i = 0;
-                while(error_info_str[i] != NULL) {
-                    if (strstr(msg->server_info, error_info_str[i]) != NULL)
-                        return e_user + i;
-                    i++;
+                
+                const struct str_err *p = error_info;
+                while(p->info) {
+                    if (strstr(msg->server_info, p->info) != NULL)
+                        return p->error;
+                    p++;
                 }
-            }
                 break;
+            }
 			default:
 #ifdef DEBUG
                 fprintf(stderr, "%s: Unkown segment type:0x%02x\n", __FUNCTION__, p->type);
@@ -623,7 +638,7 @@ make_rds_packet(char packet[], enum rds_header_type type)
 static void
 add_segment(char packet[], enum rds_segment_type type, uint8_t length, uint8_t content_len, const char *content)
 {
-    struct rds_packet_header * p = (struct rds_packet_header *)packet;
+    struct rds_packet_header *p = (struct rds_packet_header *)packet;
     struct rds_segment *s = (struct rds_segment *)(p->extra + ntohs(p->length));
 	//bzero(&s, sizeof(struct rds_segment));
     
@@ -654,10 +669,11 @@ add_segment(char packet[], enum rds_segment_type type, uint8_t length, uint8_t c
  * @param timeout
  * on success, return 0, otherwise return -1
  */
-static int connect_tm(int socket, \
+static int connect_tm(int socket,
                       const struct sockaddr *addr,
-                      socklen_t addr_len, \
-                      struct timeval *timeout) {
+                      socklen_t addr_len,
+                      struct timeval *timeout)
+{
     int     rval;
     int     sock_flag;
     int     sock_err;
@@ -687,29 +703,29 @@ static int connect_tm(int socket, \
                 FD_SET(socket, &fd);
                 rval = select(socket + 1, NULL, &fd, NULL, &tv);
                 if (rval < 0 && errno != EINTR) {
-                    dprintf("connect_tm: Error connecting %d - %s\n", errno, strerror(errno));
+                    dprintf("%s: Error connecting %d - %s\n", __FUNCTION__, errno, strerror(errno));
                     return -1;
                 } else if (rval > 0) {
                     // Socket selected for write
                     socklen_t len = sizeof(int);
                     if (getsockopt(socket, SOL_SOCKET, SO_ERROR, (void*)(&sock_err), &len) < 0) {
-                        dprintf("connect_tm: Error getsockopt() %d - %s\n", errno, strerror(errno));
+                        dprintf("%s: Error getsockopt() %d - %s\n", __FUNCTION__, errno, strerror(errno));
                         return -1;
                     }
                     // Check the value returned... 
                     if (sock_err) {
-                        dprintf("connect_tm: Error in delayed connection() %d - %s\n", sock_err, strerror(sock_err));
+                        dprintf("%s: Error in delayed connection() %d - %s\n", __FUNCTION__, sock_err, strerror(sock_err));
                         return -1;
                     }
                     break;
                 } else {
-                    dprintf("connect_tm: Timeout in select() - Cancelling!\n");
+                    dprintf("%s: Timeout in select() - Cancelling!\n", __FUNCTION__);
                     errno = ETIMEDOUT;
                     return -1;
                 }
             } while (1);
         } else {
-            dprintf("Error connecting %d - %s\n", errno, strerror(errno));
+            dprintf("%s: Error connecting %d - %s\n", __FUNCTION__, errno, strerror(errno));
             return -1;
         }
     }

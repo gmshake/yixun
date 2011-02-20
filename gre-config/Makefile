@@ -1,5 +1,5 @@
 #
-# mac-gre
+# gre-config
 # wrapper for ifconfig and route
 # (c) 2010 SummerTown
 #

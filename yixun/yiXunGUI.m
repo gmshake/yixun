@@ -16,7 +16,8 @@ NSThread *mlistenThread = nil;
 struct yixun_msg msg;
 
 @implementation yiXunGUI
-- (IBAction)aExit:(id)sender {
+- (IBAction)aExit:(id)sender
+{
     [self terminalExternalProcess];
 	if (log_out(&msg) < 0) {
 		dprint_info();
@@ -37,7 +38,8 @@ struct yixun_msg msg;
     }
 }
 
-- (IBAction)aLogin:(id)sender {
+- (IBAction)aLogin:(id)sender
+{
     [self settingSave];
 	[self changeUIState];
     
@@ -47,34 +49,31 @@ struct yixun_msg msg;
     msg.clientip = [[mClientIP stringValue] UTF8String];
     msg.mac = [[mMAC stringValue] UTF8String];
     
-    int retry_count = 2;
-    do
-    {
+    int retry_count = 3;
+    do {
         int rval = log_in(&msg);
         [self changeUIState];
         dprint_info();
         
-        if (rval == 0)
-        {
+        if (rval == 0) {
             if (mlistenThread == nil)
-                mlistenThread = [[ NSThread alloc] initWithTarget:self 
-                                                       selector:@selector(listenThread:) 
-                                                         object:nil];
+                mlistenThread = [[NSThread alloc] initWithTarget:self
+                                                        selector:@selector(listenThread:)
+                                                          object:nil];
             [mlistenThread start];
             
             keepalive_timer = [NSTimer scheduledTimerWithTimeInterval: msg.timeout
-                                                     target: self
-                                                   selector: @selector(keepalive:)
-                                                   userInfo: nil
-                                                    repeats: YES];
+                                                               target: self
+                                                             selector: @selector(keepalive:)
+                                                             userInfo: nil
+                                                              repeats: YES];
             [self runExternalProcess];
             if ([mAutoHide intValue]) [mApp hide:self];
             return;
-        }
-        else if (rval > 0)
+        } else if (rval > 0)
             break;
         sleep(1);
-    }while ([mAutoReconnect intValue] && --retry_count > 0);
+    } while ([mAutoReconnect intValue] && --retry_count > 0);
 }
 
 - (void)changeUIState
@@ -128,7 +127,8 @@ struct yixun_msg msg;
         [mMainWindow orderFront:self];
 }    
 
-- (void)settingRestore {
+- (void)settingRestore
+{
 	DNSLog(@"Restore settings");
 	
 	NSUserDefaults *defaults=[NSUserDefaults standardUserDefaults];
@@ -149,7 +149,8 @@ struct yixun_msg msg;
     [mAutoHide setIntValue:[defaults integerForKey:@"AutoHide"]];
 }
 
-- (void)settingSave {
+- (void)settingSave
+{
 	if (!settingChanged) return;
 	DNSLog(@"Save settings");
 	
@@ -165,15 +166,16 @@ struct yixun_msg msg;
 	settingChanged = NO;
 }
 
-- (void)awakeFromNib {   
+- (void)awakeFromNib
+{   
 	[self settingRestore];
 	if ([mAutoConnect intValue])
         [self aLogin:NULL]; //自动连接
 }
 
-- (void)applicationWillTerminate:(NSNotification *)aNotification {
-	if ([mExit isEnabled])
-    {
+- (void)applicationWillTerminate:(NSNotification *)aNotification
+{
+	if ([mExit isEnabled]) {
         [self aExit:NULL];
         //sleep(1); // wait log out
     }
@@ -185,8 +187,7 @@ struct yixun_msg msg;
     enum login_state s = get_login_state();
     if (s == connected)
         [mApp hide:self];
-    else
-    {
+    else {
         /*
         NSAlert *alert = [[NSAlert alloc] init]; 
         [alert setMessageText:@"Are you really want to QUIT?"]; 
@@ -221,16 +222,15 @@ struct yixun_msg msg;
 
 - (void)sheetDidEnd:(NSWindow *)sheet returnCode:(int)returnCode contextInfo:(void *)contextInfo 
 {
-    if ( returnCode == NSAlertDefaultReturn )
-    { 
+    if (returnCode == NSAlertDefaultReturn) { 
         DNSLog(@"Default Return");
         [mApp terminate:self];
-    } 
-    else
+    } else
         DNSLog(@"Other Return");
 } 
 
-- (IBAction)aSettingChanged:(id)sender {
+- (IBAction)aSettingChanged:(id)sender
+{
     settingChanged = YES;
 }
 
@@ -257,8 +257,7 @@ struct yixun_msg msg;
 	[task launch];
 
 #ifdef DEBUG
-	while((inData = [readHandle availableData]) && [inData length])
-	{
+	while((inData = [readHandle availableData]) && [inData length]) {
 		NSString *temp = [[NSString alloc] initWithData:inData encoding:NSUTF8StringEncoding];
         NSLog(temp);
 	}
@@ -283,9 +282,8 @@ struct yixun_msg msg;
 	[task setLaunchPath:@"/usr/local/bin/mac-gre"];
 	[task setArguments:arguments];
 	[task launch];
-#ifdef DEBUG    
-	while((inData = [readHandle availableData]) && [inData length])
-	{
+#ifdef DEBUG
+	while((inData = [readHandle availableData]) && [inData length]) {
 		NSString *temp = [[NSString alloc] initWithData:inData encoding:NSUTF8StringEncoding];
         NSLog(temp);
 	}
@@ -296,25 +294,20 @@ struct yixun_msg msg;
 
 - (void)listenThread: (id)arg
 {
-    while(1) {
-        accept_client(&msg);
-    }
+    while(1) accept_client(&msg);
 }
 
 - (void)keepalive: (NSTimer *) timer
 {
     DNSLog(@"Send keep-alive packet");
-    if (keep_alive(&msg) < 0) // error when sending keep-alive package
-    {
-        sleep(1);
-        if (keep_alive(&msg) < 0)
-        {
+    if (keep_alive(&msg) < 0) {// error when sending keep-alive package
+        sleep(1);   // retry after 1 second
+        if (keep_alive(&msg) < 0) {
             [self aExit:NULL];
             if ([mAutoReconnect intValue])
                 [self aLogin:NULL]; //自动重新连接
         }
     }
-    
 }
 
 @end

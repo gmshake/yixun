@@ -110,7 +110,7 @@ int main (int argc, char * const argv[])
         }
     }
     
-    int retry_count = 2;
+    int retry_count = 3;
     do {
         int rval = log_in(&msg);
         if (rval == 0)
@@ -229,11 +229,11 @@ void parse_args(int argc, char * const argv[])
         // if do not use configure file, username and password are required
         if (conf_file == NULL) {
             if (msg.username == NULL) {
-                fprintf(stderr, "Error: Require <username>:\n");
+                fprintf(stderr, "Error: Require <username>\n");
                 exit(-1);
             }
             if (msg.password == NULL) {
-                fprintf(stderr, "Error: Require <password>:\n");
+                fprintf(stderr, "Error: Require <password>\n");
                 exit(-2);
             }
         }
