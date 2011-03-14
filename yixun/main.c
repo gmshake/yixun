@@ -256,69 +256,44 @@ void parse_conf_file(const char *conf)
 static int gre_if_op(int flag, struct yixun_msg *msg, int argc, char *const argv[])
 {
     char cmd[512];
-    char tmp[128];
-    char ssrc[16], sdst[16], slocal[16], sremote[16], snetmask[16];
-
-    snprintf(ssrc, 16, "%s", inet_itoa(msg->gre_src));
-    snprintf(sdst, 16, "%s", inet_itoa(msg->gre_dst));
-    snprintf(slocal, 16, "%s", inet_itoa(msg->gre_local));
-    snprintf(sremote, 16, "%s", inet_itoa(msg->gre_remote));
-    snprintf(snetmask, 16, "%s", inet_itoa(msg->gre_netmask));
-    
-    /*
-    if (flag & FLAG_SET) {
-        if (flag & FLAG_CROUTE) {
-            strcpy(cmd, "/usr/local/bin/mac-gre -C210.37.152.1");
-        } else {
-            strcpy(cmd, "/usr/local/bin/mac-gre");
-        }
-    } else {
-        if (flag & FLAG_CROUTE) {
-            strcpy(cmd, "/usr/local/bin/mac-gre -u -C210.37.152.1");
-        } else {
-            strcpy(cmd, "/usr/local/bin/mac-gre -u");
-        }
-    } */
-    
-    strcpy(cmd, "/usr/local/bin/gre-config");
+    char *p = cmd;
+    p = stpcpy(p, "/usr/local/bin/gre-config");
     if ((flag & FLAG_SET) == 0)
-        strcat(cmd, " -u");
+        p = stpcpy(p, " -u");
     
-    sprintf(tmp, " -s%s -d%s -l%s -r%s", ssrc, sdst, slocal, sremote);
-    strcat(cmd, tmp);
+    p += sprintf(p, " -s%s", inet_itoa(msg->gre_src));
+    p += sprintf(p, " -d%s", inet_itoa(msg->gre_dst));
+    p += sprintf(p, " -l%s", inet_itoa(msg->gre_local));
+    p += sprintf(p, " -r%s", inet_itoa(msg->gre_remote));
     
-    if (flag & FLAG_SET) {
-        sprintf(tmp, " -n%s", snetmask);
-        strcat(cmd, tmp);
-    }
-
+    if (flag & FLAG_SET)
+        p += sprintf(p, " -n%s", inet_itoa(msg->gre_netmask));
+    
     if (flag & FLAG_CROUTE) {
         if (default_route == 0) {
             in_addr_t dst = 0, mask = 0;
-            if (route_get(&dst, &mask, &default_route, NULL) < 0)
-                return -1;
-        }
-        sprintf(tmp, " -C%s ", inet_itoa(default_route));
-        strcat(cmd, tmp);
-        
-        strcat(cmd, inet_itoa(msg->auth_server));
-        if (msg->msg_server != 0) {
-            strcat(cmd, " ");
-            strcat(cmd, inet_itoa(msg->msg_server));
-            if (msg->gre_dst != msg->msg_server) {
-                strcat(cmd, " ");
-                strcat(cmd, sdst);
+            if (route_get(&dst, &mask, &default_route, NULL) < 0) {/* can NOT get default route */
+                mask = 0xffffffff;
+                dst = msg->auth_server;
+                if (route_get(&dst, &mask, &default_route, NULL) < 0)/* can NOT get route to authorize server, joking me??? */
+                    return -1;
             }
         }
         
+        p += sprintf(p, " -C%s ", inet_itoa(default_route));
+        
+        p = stpcpy(p, inet_itoa(msg->auth_server));
+        if (msg->msg_server != 0)
+            p += sprintf(p, " %s", inet_itoa(msg->msg_server));
+        if (msg->gre_dst != msg->msg_server)
+            p += sprintf(p, " %s", inet_itoa(msg->gre_dst));
+        
         int i;
         for (i = 0; i < argc; i++) {
-            size_t remain = sizeof(cmd) - strlen(cmd);
-            if (remain <= 3 || argv[i] == NULL)
+            if (argv[i] == NULL || p + strlen(argv[i]) + 1 >= cmd + sizeof(cmd))
                 break;
-            
-            strncat(cmd, " ", remain);
-            strncat(cmd, argv[i], remain - 1);
+            else
+                p += sprintf(p, " %s", argv[i]);
         }
     }
 #ifdef DEBUG

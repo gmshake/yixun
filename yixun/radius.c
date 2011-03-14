@@ -139,7 +139,7 @@ static int yixun_log_op(int op, struct yixun_msg *msg)
     }
     
     struct timeval tv;
-    tv.tv_sec = CONNECTION_TIME_OUT;
+    tv.tv_sec = CONNECTION_TIMEOUT;
     tv.tv_usec = 0;
     
     struct sockaddr_in auth_server;
@@ -206,7 +206,7 @@ static int yixun_log_op(int op, struct yixun_msg *msg)
         msg->make_send_buff_done = -1;
     }
     
-    tv.tv_sec = SND_RCV_TIME_OUT;
+    tv.tv_sec = SND_TIMEOUT;
     tv.tv_usec = 0;
     if (setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) < 0) {
         log_perror("[%s] setsockopt", __FUNCTION__);
@@ -225,7 +225,7 @@ static int yixun_log_op(int op, struct yixun_msg *msg)
         {
             char r_buff[R_BUF_LEN]; // receive buffer
             
-            tv.tv_sec = SND_RCV_TIME_OUT;
+            tv.tv_sec = RCV_TIMEOUT;
             tv.tv_usec = 0;
             if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
                 log_perror("[%s] setsockopt", __FUNCTION__);
@@ -396,7 +396,7 @@ int accept_client(struct yixun_msg *msg)
          */
         /*
          if (strcmp(inet_ntoa(r_client.sin_addr), AUTH_SERVER) != 0 && \
-         strcmp(inet_ntoa(r_client.sin_addr), BRAS_SERVER) != 0) // 当对方的IP地址不是服务器IP地址时断开连接（防止攻击）
+         strcmp(inet_ntoa(r_client.sin_addr), MSG_SERVER) != 0) // 当对方的IP地址不是服务器IP地址时断开连接（防止攻击）
          */
         //if (ui != auth_server_addrs) // 当对方的IP地址不在接入服务器IP地址段时断开连接（防止攻击）
         if ((ntohl(r_client.sin_addr.s_addr) ^ ntohl(msg->auth_server)) >> (32 - msg->auth_server_maskbits) != 0) {
@@ -494,9 +494,9 @@ static int do_with_server_info(char buff[], struct yixun_msg *msg, int sockfd)
                 return -1;
             }
             
-            if (msg->timeout > MAX_TIME_OUT) {
-                log_notice("Server side timeout to long:%u\n  use %u instead\n", msg->timeout, MAX_TIME_OUT);
-                msg->timeout = MAX_TIME_OUT;
+            if (msg->timeout > KEEP_ALIVE_TIMEOUT) {
+                log_notice("Server side timeout to long:%u\n  use %u instead\n", msg->timeout, KEEP_ALIVE_TIMEOUT);
+                msg->timeout = KEEP_ALIVE_TIMEOUT;
             }
             
             break;
