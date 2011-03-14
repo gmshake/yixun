@@ -30,7 +30,7 @@ int convert_code(char *from_charset, char *to_charset,
         log_perror("Error iconv");
 		iconv_close(cd);
 		return -1;
-	}
+    }
     iconv_close(cd);
     return 0;
 }
