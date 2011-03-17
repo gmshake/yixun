@@ -13,7 +13,7 @@
 #include <stdio.h>
 #endif
 
-#include "common_logs.h"
+#include "log_xxx.h"
 
 int convert_code(char *from_charset, char *to_charset, \
 				 const char *inbuf, size_t inlen, \

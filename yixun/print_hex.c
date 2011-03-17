@@ -3,31 +3,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-
-void print_hex(const void *data, size_t len);
-
 int hex_to_ascii(char out_buff[], size_t out_len, const void *in_buff, size_t in_len);
-
-//void debug_print_hex(const void *data, size_t len);
-
-/*
-void debug_print_hex(const void *data, size_t len)
-{
-    const char *head = "******DEBUG******\n";
-    size_t bufflen = sizeof(char) * (len * 3 + len / 16 + strlen(head) + 2);  // '\n' '\0'
-    char *buff = (char *)malloc(bufflen);
-    if (buff == NULL) log_perror("[debug_print_hex] Error malloc");
-    
-    char *end = buff + bufflen;
-    char *p = buff;
-    p += snprintf(p, end - p, head);
-    p += hex_to_ascii(p, end - p, data, len);
-    
-    snprintf(p, end - p, "\n");
-    log_debug(buff);
-    free(buff);
-}
-*/
  
 void print_hex(const void *data, size_t len)
 {

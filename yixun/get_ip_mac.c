@@ -20,15 +20,13 @@
 
 #include <netinet/in.h> // struct sockaddr_in
 
+#include "log_xxx.h"
 #include "common_macro.h"
-#include "common_logs.h"
 
 #ifndef IFCONF_BUF_LEN
 #define IFCONF_BUF_LEN 1024
 #endif
 
-//int get_ip_mac_by_socket(int socket, in_addr_t *addr, uint8_t eth_addr[]);
-//int get_ip_mac_by_name(const char *ifname, in_addr_t *addr, uint8_t eth_addr[]); 
 
 int get_ip_mac_by_socket(int socket, in_addr_t *ip_addr, uint8_t eth_addr[])
 {

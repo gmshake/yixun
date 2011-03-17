@@ -9,8 +9,6 @@
 #ifndef _RADIUS_H
 #define _RADIUS_H
 
-//#include <stdint.h>
-//#include <netinet/in.h>
 #include <net/ethernet.h> //ETHER_ADDR_LEN
 #include "yixun_config.h"
 
@@ -35,7 +33,6 @@ struct yixun_msg {
     /* internal use */
     int last_op;
     int pre_config_done;
-    int make_send_buff_done;
     in_addr_t auth_server;
     uint32_t auth_server_maskbits;
     in_addr_t msg_server;
@@ -45,21 +42,8 @@ struct yixun_msg {
     char server_info[SEGMENT_MAX_LEN + (SEGMENT_MAX_LEN >> 1)];
 };
 
-/*
-extern in_addr_t gre_src, gre_dst, gre_local, gre_remote, net_mask;  //out parameters
-extern in_addr_t auth_server_addr, msg_server_addr;
-extern uint32_t timeout, upload_band, download_band;
-
-//extern int set_config(const char *ifname, const char *username, const char *password);
-extern int set_config(const char *username, const char *password, const char *serverip, const char *clientip, const char *mac);
-
-extern int log_in();
-extern int log_out();
-extern int send_keep_alive();
-*/
-
-int log_in(struct yixun_msg *msg);
-int log_out(struct yixun_msg *msg);
+int login(struct yixun_msg *msg);
+int logout(struct yixun_msg *msg);
 int keep_alive(struct yixun_msg *msg);
 
 extern int start_listen();

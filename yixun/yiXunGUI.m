@@ -1,13 +1,13 @@
 #import "yiXunGUI.h"
 
 #include <arpa/inet.h>
-#include "common_logs.h"
+
+#include "log_xxx.h"
+#include "private_buff.h"
 #include "radius.h"
 #include "login_state.h"
 
 #include "common_macro.h"
-
-//#include "listen_thread.h"
 
 BOOL settingChanged = NO;
 NSTimer *keepalive_timer = nil;
@@ -19,7 +19,7 @@ struct yixun_msg msg;
 - (IBAction)aExit:(id)sender
 {
     [self terminalExternalProcess];
-	if (log_out(&msg) < 0) {
+	if (logout(&msg) < 0) {
 		dprint_info();
 	}
     

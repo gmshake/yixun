@@ -8,14 +8,15 @@
 
 /* Begin PBXBuildFile section */
 		1DDD58160DA1D0A300B32029 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 1DDD58140DA1D0A300B32029 /* MainMenu.xib */; };
-		590F1500124DC0F90088D3FB /* login_state.c in Sources */ = {isa = PBXBuildFile; fileRef = 590F14FF124DC0F90088D3FB /* login_state.c */; };
 		591F5A1C1243448800822361 /* convert_code.c in Sources */ = {isa = PBXBuildFile; fileRef = 591F5A141243448800822361 /* convert_code.c */; };
 		591F5A1D1243448800822361 /* print_hex.c in Sources */ = {isa = PBXBuildFile; fileRef = 591F5A161243448800822361 /* print_hex.c */; };
 		591F5A1E1243448800822361 /* get_ip_mac.c in Sources */ = {isa = PBXBuildFile; fileRef = 591F5A181243448800822361 /* get_ip_mac.c */; };
 		591F5CC31243A09700822361 /* encode_password.c in Sources */ = {isa = PBXBuildFile; fileRef = 591F5CC21243A09700822361 /* encode_password.c */; };
 		5921E271124DA16300C65C2A /* yiXunGUI.m in Sources */ = {isa = PBXBuildFile; fileRef = 59201017124CC4BA0037523C /* yiXunGUI.m */; };
 		59378B27123FC3B00092E11E /* radius.c in Sources */ = {isa = PBXBuildFile; fileRef = 59378B26123FC3B00092E11E /* radius.c */; };
-		5967E2811258DA9D00CECE2E /* common_logs.c in Sources */ = {isa = PBXBuildFile; fileRef = 5967E2801258DA9D00CECE2E /* common_logs.c */; };
+		5940BCA7133259C8001AF949 /* login_state.c in Sources */ = {isa = PBXBuildFile; fileRef = 5940BCA5133259C8001AF949 /* login_state.c */; };
+		5940BCB513325E15001AF949 /* log_xxx.c in Sources */ = {isa = PBXBuildFile; fileRef = 5940BCB413325E15001AF949 /* log_xxx.c */; };
+		5940BCE613326ADD001AF949 /* private_buff.c in Sources */ = {isa = PBXBuildFile; fileRef = 5940BCE513326ADD001AF949 /* private_buff.c */; };
 		8D11072B0486CEB800E47090 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 089C165CFE840E0CC02AAC07 /* InfoPlist.strings */; };
 		8D11072D0486CEB800E47090 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 29B97316FDCFA39411CA2CEA /* main.m */; settings = {ATTRIBUTES = (); }; };
 		8D11072F0486CEB800E47090 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1058C7A1FEA54F0111CA2CBB /* Cocoa.framework */; };
@@ -30,8 +31,6 @@
 		29B97324FDCFA39411CA2CEA /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = /System/Library/Frameworks/AppKit.framework; sourceTree = "<absolute>"; };
 		29B97325FDCFA39411CA2CEA /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = /System/Library/Frameworks/Foundation.framework; sourceTree = "<absolute>"; };
 		32CA4F630368D1EE00C91783 /* yixun_Prefix.pch */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = yixun_Prefix.pch; sourceTree = "<group>"; };
-		590F14FE124DC0F90088D3FB /* login_state.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = login_state.h; sourceTree = "<group>"; };
-		590F14FF124DC0F90088D3FB /* login_state.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = login_state.c; sourceTree = "<group>"; };
 		591F5A141243448800822361 /* convert_code.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = convert_code.c; sourceTree = "<group>"; };
 		591F5A151243448800822361 /* convert_code.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = convert_code.h; sourceTree = "<group>"; };
 		591F5A161243448800822361 /* print_hex.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = print_hex.c; sourceTree = "<group>"; };
@@ -45,8 +44,12 @@
 		59201018124CC4BA0037523C /* yiXunGUI.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = yiXunGUI.h; sourceTree = "<group>"; };
 		59378B25123FC3B00092E11E /* radius.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = radius.h; sourceTree = "<group>"; };
 		59378B26123FC3B00092E11E /* radius.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = radius.c; sourceTree = "<group>"; };
-		5967E27F1258DA9D00CECE2E /* common_logs.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = common_logs.h; sourceTree = "<group>"; };
-		5967E2801258DA9D00CECE2E /* common_logs.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = common_logs.c; sourceTree = "<group>"; };
+		5940BCA5133259C8001AF949 /* login_state.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = login_state.c; sourceTree = "<group>"; };
+		5940BCA6133259C8001AF949 /* login_state.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = login_state.h; sourceTree = "<group>"; };
+		5940BCB313325E15001AF949 /* log_xxx.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = log_xxx.h; sourceTree = "<group>"; };
+		5940BCB413325E15001AF949 /* log_xxx.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = log_xxx.c; sourceTree = "<group>"; };
+		5940BCE413326ADD001AF949 /* private_buff.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = private_buff.h; sourceTree = "<group>"; };
+		5940BCE513326ADD001AF949 /* private_buff.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = private_buff.c; sourceTree = "<group>"; };
 		59933E1B1245B9FA006D369A /* rds_types.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = rds_types.h; sourceTree = "<group>"; };
 		59B1BF221257104600CECA5A /* common_macro.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = common_macro.h; sourceTree = "<group>"; };
 		59D14DF6125E04AC00B7548B /* yixun.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = yixun.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -77,16 +80,18 @@
 				591F5A161243448800822361 /* print_hex.c */,
 				591F5A191243448800822361 /* get_ip_mac.h */,
 				591F5A181243448800822361 /* get_ip_mac.c */,
+				5940BCA6133259C8001AF949 /* login_state.h */,
+				5940BCA5133259C8001AF949 /* login_state.c */,
 				59378B25123FC3B00092E11E /* radius.h */,
 				59378B26123FC3B00092E11E /* radius.c */,
-				59B1BF221257104600CECA5A /* common_macro.h */,
-				5967E27F1258DA9D00CECE2E /* common_logs.h */,
-				5967E2801258DA9D00CECE2E /* common_logs.c */,
-				590F14FE124DC0F90088D3FB /* login_state.h */,
-				590F14FF124DC0F90088D3FB /* login_state.c */,
+				5940BCB313325E15001AF949 /* log_xxx.h */,
+				5940BCB413325E15001AF949 /* log_xxx.c */,
+				5940BCE413326ADD001AF949 /* private_buff.h */,
+				5940BCE513326ADD001AF949 /* private_buff.c */,
 				59933E1B1245B9FA006D369A /* rds_types.h */,
 				591F5CC11243A09700822361 /* encode_password.h */,
 				591F5CC21243A09700822361 /* encode_password.c */,
+				59B1BF221257104600CECA5A /* common_macro.h */,
 				29B97316FDCFA39411CA2CEA /* main.m */,
 			);
 			name = yixun_class;
@@ -222,8 +227,9 @@
 				591F5A1E1243448800822361 /* get_ip_mac.c in Sources */,
 				591F5CC31243A09700822361 /* encode_password.c in Sources */,
 				5921E271124DA16300C65C2A /* yiXunGUI.m in Sources */,
-				590F1500124DC0F90088D3FB /* login_state.c in Sources */,
-				5967E2811258DA9D00CECE2E /* common_logs.c in Sources */,
+				5940BCA7133259C8001AF949 /* login_state.c in Sources */,
+				5940BCB513325E15001AF949 /* log_xxx.c in Sources */,
+				5940BCE613326ADD001AF949 /* private_buff.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -296,7 +302,10 @@
 				IBC_NOTICES = YES;
 				IBC_WARNINGS = YES;
 				ONLY_ACTIVE_ARCH = YES;
-				OTHER_CFLAGS = "-DDEBUG";
+				OTHER_CFLAGS = (
+					"-DDEBUG",
+					"-DYIXUN_MULTI_THREAD",
+				);
 				OTHER_LDFLAGS = (
 					"-liconv",
 					"-lpthread",
@@ -315,6 +324,7 @@
 				GCC_VERSION = com.apple.compilers.llvmgcc42;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				OTHER_CFLAGS = "-DYIXUN_MULTI_THREAD";
 				OTHER_LDFLAGS = (
 					"-liconv",
 					"-lpthread",
