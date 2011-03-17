@@ -26,6 +26,7 @@ struct rds_packet_header //radius包头
 	uint32_t pad;   // to be zeroed
 	char extra[0];
 };
+#pragma pack()
 
 struct rds_segment { // 消息协议中的段
 	uint8_t flag;
@@ -35,8 +36,8 @@ struct rds_segment { // 消息协议中的段
     uint8_t length;  // total length, including rds_segment header (sizeof(rds_segment))
 	uint8_t pad;    // to be zeroed
 	char content[0];
-};
-#pragma pack()
+}__attribute__((__packed__));
+
 
 enum rds_header_type { //radius包头信息类型
     /* client send packet header type */

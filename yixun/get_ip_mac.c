@@ -27,10 +27,10 @@
 #define IFCONF_BUF_LEN 1024
 #endif
 
-int get_ip_mac_by_socket(int socket, in_addr_t *address,   uint8_t eth_addr[]);
-int get_ip_mac_by_name(const char *ifname, in_addr_t *addr, uint8_t eth_addr[]); 
+//int get_ip_mac_by_socket(int socket, in_addr_t *addr, uint8_t eth_addr[]);
+//int get_ip_mac_by_name(const char *ifname, in_addr_t *addr, uint8_t eth_addr[]); 
 
-int get_ip_mac_by_socket(int socket, in_addr_t *ip_addr,   uint8_t eth_addr[])
+int get_ip_mac_by_socket(int socket, in_addr_t *ip_addr, uint8_t eth_addr[])
 {
     struct sockaddr_in sa_addr;
     socklen_t len = sizeof(struct sockaddr_in);
