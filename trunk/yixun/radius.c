@@ -49,13 +49,13 @@ void print_config(struct yixun_msg *msg);
 
 static int pre_config(struct yixun_msg *msg);
 static int yixun_log_op(int op, struct yixun_msg *msg);
-static int do_with_server_info(char buff[], struct yixun_msg *msg, int sockfd);  //返回0表示无错，返回正数，表示出错原因(e_user, e_pwd ....)
-static int get_parameters(char *buff, struct yixun_msg *msg); //认证通过后，获取接入服务器给的参数
+static int do_with_server_info(void *buff, struct yixun_msg *msg, int sockfd);  //返回0表示无错，返回正数，表示出错原因(e_user, e_pwd ....)
+static int get_parameters(const void *buff, struct yixun_msg *msg); //认证通过后，获取接入服务器给的参数
 
-static struct rds_packet_header * make_rds_packet(char packet[], enum rds_header_type type); //生成一个发送包（包头）
+static struct rds_packet_header * make_rds_packet(void *buff, enum rds_header_type type); //生成一个发送包（包头）
 
 //为发送包添加相应字段
-static void add_segment(char packet[], enum rds_segment_type type, uint8_t length, uint8_t content_len, const char *content);
+static void add_segment(void *buff, enum rds_segment_type type, uint8_t length, uint8_t content_len, const void *content);
 
 // 带连接超时的connect
 static int connect_tm(int socket, const struct sockaddr *addr, socklen_t addr_len, struct timeval *timeout);
@@ -149,7 +149,7 @@ static int yixun_log_op(int op, struct yixun_msg *msg)
     auth_server.sin_addr.s_addr = msg->auth_server;
     
     if (connect_tm(sockfd, (struct sockaddr *)&auth_server, sizeof(struct sockaddr_in), &tv) < 0) {
-        log_perror("[%s] connect %s", __FUNCTION__, inet_ntoa(auth_server.sin_addr));
+        log_perror("connect to %s", inet_ntoa(auth_server.sin_addr));
         rval = -1;
         goto ERROR;
     }      
@@ -223,7 +223,7 @@ static int yixun_log_op(int op, struct yixun_msg *msg)
     switch (op) {
         case LOGIN:
         {
-            char r_buff[R_BUF_LEN]; // receive buffer
+            BUFF_ALIGNED(r_buff, R_BUF_LEN); // receive buffer
             
             tv.tv_sec = RCV_TIMEOUT;
             tv.tv_usec = 0;
@@ -381,7 +381,7 @@ int accept_client(struct yixun_msg *msg)
     
     pthread_testcancel();
     if (FD_ISSET(sockListen, &rfds)) {
-        char r_buff[R_BUF_LEN];
+        BUFF_ALIGNED(r_buff, R_BUF_LEN);
         struct sockaddr_in r_client;
         socklen_t len = sizeof(r_client);
         int sock_client = accept(sockListen, (struct sockaddr *)&r_client, &len);
@@ -389,16 +389,7 @@ int accept_client(struct yixun_msg *msg)
             log_perror("[%s] accept", __FUNCTION__);
             return -1;
         }
-        /*
-         in_addr_t ui = ntohl(r_client.sin_addr.s_addr);
-         ui &= ~((1 << (32 - auth_server_maskbits)) - 1);
-         ui = htonl(ui);
-         */
-        /*
-         if (strcmp(inet_ntoa(r_client.sin_addr), AUTH_SERVER) != 0 && \
-         strcmp(inet_ntoa(r_client.sin_addr), MSG_SERVER) != 0) // 当对方的IP地址不是服务器IP地址时断开连接（防止攻击）
-         */
-        //if (ui != auth_server_addrs) // 当对方的IP地址不在接入服务器IP地址段时断开连接（防止攻击）
+        // 当对方的IP地址不在接入服务器IP地址段时断开连接（防止攻击）
         if ((ntohl(r_client.sin_addr.s_addr) ^ ntohl(msg->auth_server)) >> (32 - msg->auth_server_maskbits) != 0) {
             log_notice("[%s]: %s attempt to connect\n", __FUNCTION__, inet_ntoa(r_client.sin_addr));
             close(sock_client);
@@ -444,7 +435,11 @@ void print_config(struct yixun_msg *msg)
     struct in_addr a[5];
     char p1[5][20];
     
-    a[0].s_addr = msg->gre_src; a[1].s_addr = msg->gre_dst; a[2].s_addr = msg->gre_local; a[3].s_addr = msg->gre_remote; a[4].s_addr = msg->gre_netmask;
+    a[0].s_addr = msg->gre_src;
+    a[1].s_addr = msg->gre_dst;
+    a[2].s_addr = msg->gre_local;
+    a[3].s_addr = msg->gre_remote;
+    a[4].s_addr = msg->gre_netmask;
     int i;
     for (i = 0; i < 5; i++) {
         strcpy(p1[i], inet_ntoa(a[i]));
@@ -461,8 +456,18 @@ void print_config(struct yixun_msg *msg)
  * @sockfd, send yixun user ack from which
  * on success, return 0, otherwise return none-zero
  */
-static int do_with_server_info(char buff[], struct yixun_msg *msg, int sockfd)
+static int do_with_server_info(void *buff, struct yixun_msg *msg, int sockfd)
 {
+    /*
+     * hack: due to problem caused by memory alignment, we sugguest that buff 
+     * is aligned to 4 bytes, then we will not encounter the annoying 
+     * bus-error problem on MIPS/ARM/PowerPC/SPARC, or the worse performence 
+     * on X86-64
+     */
+#ifdef DEBUG
+    if ((size_t)buff % sizeof(int) != 0)
+        log_warning("[%s] buffer(%p) is not aligned to %d bytes\n", __FUNCTION__, buff, sizeof(int));
+#endif
     struct rds_packet_header *hd = (struct rds_packet_header *)buff;
     if (hd->flag != RADIUS_HEADER_FLAG) {
         log_err("Error: Invalid server package flag:0x%02x\n", hd->flag);
@@ -478,9 +483,10 @@ static int do_with_server_info(char buff[], struct yixun_msg *msg, int sockfd)
             if (start_listen() < 0)
                 return -1;
             
-            char packet[sizeof(struct rds_packet_header)];
+            //char packet[sizeof(struct rds_packet_header)];
+            BUFF_ALIGNED(packet, sizeof(struct rds_packet_header));
             make_rds_packet(packet, u_ack);
-            if (send(sockfd, packet, sizeof(packet), 0) < 0) {
+            if (send(sockfd, packet, sizeof(struct rds_packet_header), 0) < 0) {
                 log_perror("[%s] send", __FUNCTION__);
                 stop_listen();
                 return -1;
@@ -495,7 +501,7 @@ static int do_with_server_info(char buff[], struct yixun_msg *msg, int sockfd)
             }
             
             if (msg->timeout > KEEP_ALIVE_TIMEOUT) {
-                log_notice("Server side timeout to long:%u\n  use %u instead\n", msg->timeout, KEEP_ALIVE_TIMEOUT);
+                log_notice("Server side timeout is too long:%u, use %u instead\n", msg->timeout, KEEP_ALIVE_TIMEOUT);
                 msg->timeout = KEEP_ALIVE_TIMEOUT;
             }
             
@@ -516,6 +522,7 @@ static int do_with_server_info(char buff[], struct yixun_msg *msg, int sockfd)
             break;
         default:
             log_err("[%s] Unkown msg type: 0x%02x\n", __FUNCTION__, hd->type);
+            break;
     }
     return 0;
 }
@@ -526,14 +533,24 @@ static int do_with_server_info(char buff[], struct yixun_msg *msg, int sockfd)
  * @msg,    out
  * on success, return 0, otherwise return none-zero
  */
-static int get_parameters(char *buff, struct yixun_msg *msg)
+static int get_parameters(const void *buff, struct yixun_msg *msg)
 {
+    /*
+     * hack: due to problem caused by memory alignment, we sugguest that buff 
+     * is aligned to 4 bytes, then we will not encounter the annoying 
+     * bus-error problem on MIPS/ARM/PowerPC/SPARC, or the worse performence 
+     * on X86-64
+     */
+#ifdef DEBUG
+    if ((size_t)buff % sizeof(int) != 0)
+        log_warning("[%s] buffer(%p) is not aligned to %d bytes\n", __FUNCTION__, buff, sizeof(int));
+#endif
 	struct rds_packet_header *hd = (struct rds_packet_header *)buff;
 	buff = hd->extra; // first segment
 	
-	char *end = buff + ntohs(hd->length);	// the end of segment
+	const void *end = buff + ntohs(hd->length);	// the end of segment
 	while (buff < end) {
-		struct rds_segment *p = (struct rds_segment *)buff;
+		const struct rds_segment *p = (const struct rds_segment *)buff;
 		if (p->flag != SERVER_SEGMENT_FLAG) {
 			log_err("[%s] Invalid segment flag:0x%02x\n", __FUNCTION__, p->flag);
 #ifdef DEBUG
@@ -617,9 +634,19 @@ static int get_parameters(char *buff, struct yixun_msg *msg)
  * @param content, data to be copied
  */
 static struct rds_packet_header *
-make_rds_packet(char packet[], enum rds_header_type type)
+make_rds_packet(void *buff, enum rds_header_type type)
 {
-    struct rds_packet_header *p = (struct rds_packet_header *)packet;
+    /*
+     * hack: due to problem caused by memory alignment, we sugguest that buff 
+     * is aligned to 4 bytes, then we will not encounter the annoying 
+     * bus-error problem on MIPS/ARM/PowerPC/SPARC, or the worse performence 
+     * on X86-64
+     */
+#ifdef DEBUG
+    if ((size_t)buff % sizeof(int) != 0)
+        log_warning("[%s] buffer(%p) is not aligned to %d bytes\n", __FUNCTION__, buff, sizeof(int));
+#endif
+    struct rds_packet_header *p = (struct rds_packet_header *)buff;
     p->flag = RADIUS_HEADER_FLAG; //Always be 0x5f
     p->type = (uint8_t)type;
     p->pad = 0;
@@ -636,9 +663,19 @@ make_rds_packet(char packet[], enum rds_header_type type)
  * @param content, data to be copied, NULL indicates skip length packet, ie, leave length packet unchanged
  */
 static void
-add_segment(char packet[], enum rds_segment_type type, uint8_t length, uint8_t content_len, const char *content)
+add_segment(void *buff, enum rds_segment_type type, uint8_t length, uint8_t content_len, const void *content)
 {
-    struct rds_packet_header *p = (struct rds_packet_header *)packet;
+    /*
+     * hack: due to problem caused by memory alignment, we sugguest that buff 
+     * is aligned to 4 bytes, then we will not encounter the annoying 
+     * bus-error problem on MIPS/ARM/PowerPC/SPARC, or the worse performence 
+     * on X86-64
+     */
+#ifdef DEBUG
+    if ((size_t)buff % sizeof(int) != 0)
+        log_warning("[%s] buffer(%p) is not aligned to %d bytes\n", __FUNCTION__, buff, sizeof(int));
+#endif
+    struct rds_packet_header *p = (struct rds_packet_header *)buff;
     struct rds_segment *s = (struct rds_segment *)(p->extra + ntohs(p->length));
 	//bzero(&s, sizeof(struct rds_segment));
     

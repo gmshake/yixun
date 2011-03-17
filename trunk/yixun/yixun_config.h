@@ -12,7 +12,7 @@
 
 //用户名最大长度
 #ifndef MAX_USER_NAME_LEN
-#define MAX_USER_NAME_LEN 20
+#define MAX_USER_NAME_LEN 24
 #endif
 
 //用户密码最大长度

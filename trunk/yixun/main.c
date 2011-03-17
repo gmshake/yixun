@@ -137,7 +137,7 @@ int main (int argc, char * const argv[])
 
     signal(SIGINT,  process_signals);
     signal(SIGTERM, process_signals);
-    signal(SIGHUP,  process_signals); // If the terminal closes, we might get this
+    signal(SIGHUP,  process_signals);//If the terminal closes, we might get this
     signal(SIGQUIT, process_signals);
     signal(SIGALRM, process_signals);
     
@@ -253,7 +253,10 @@ void parse_conf_file(const char *conf)
  */
 #define FLAG_SET 0x01
 #define FLAG_CROUTE 0x02
-static int gre_if_op(int flag, struct yixun_msg *msg, int argc, char *const argv[])
+static int gre_if_op(int flag, \
+                     struct yixun_msg *msg, \
+                     int argc, \
+                     char *const argv[])
 {
     char cmd[512];
     char *p = cmd;
@@ -272,11 +275,13 @@ static int gre_if_op(int flag, struct yixun_msg *msg, int argc, char *const argv
     if (flag & FLAG_CROUTE) {
         if (default_route == 0) {
             in_addr_t dst = 0, mask = 0;
-            if (route_get(&dst, &mask, &default_route, NULL) < 0) {/* can NOT get default route */
+            /* get default route */
+            if (route_get(&dst, &mask, &default_route, NULL) < 0) {
                 mask = 0xffffffff;
                 dst = msg->auth_server;
-                if (route_get(&dst, &mask, &default_route, NULL) < 0)/* can NOT get route to authorize server, joking me??? */
-                    return -1;
+                /* get route to authorize server */
+                if (route_get(&dst, &mask, &default_route, NULL) < 0)
+                    return -1; /* joking me ??? */
             }
         }
         
@@ -402,7 +407,7 @@ void process_signals(int sig)
         case SIGALRM:
             if (keep_alive(&msg) < 0) {
                 sleep(1);
-                if (keep_alive(&msg) < 0) { // unable to send keep alive to BRAS
+                if (keep_alive(&msg) < 0) { //unable to send keep alive to BRAS
                     log_warning("Failed sending keep-alive packets.");
                     stop_listen();
                     connected = 0;

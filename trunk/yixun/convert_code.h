@@ -10,6 +10,6 @@
 #ifndef _CONVERT_CODE_H
 #define _CONVERT_CODE_H
 
-extern int convert_code(char *from_charset, char *to_charset, char *inbuf, size_t inlen, char *outbuf, size_t outlen);
+extern int convert_code(char *from_charset, char *to_charset, const char *inbuf, size_t inlen, char *outbuf, size_t outlen);
 
 #endif

@@ -14,6 +14,11 @@
 #define inet_itoa(x) inet_ntoa(*(struct in_addr*)&(x))
 #endif
 
+/* make buff that is aligned to 4 bytes */
+#ifndef BUFF_ALIGNED
+#define BUFF_ALIGNED(name, size) char name[(size)]__attribute__((aligned(sizeof(uint32_t))))
+#endif
+
 #ifdef DEBUG
 #define dprintf(...) do { fprintf(stderr, "Debug: In %s at line: %u\n", __FILE__, __LINE__ ); \
 fprintf(stderr, __VA_ARGS__); } while(0)
