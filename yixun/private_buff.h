@@ -10,6 +10,9 @@
 #ifndef _PRIVATE_BUFF_H
 #define _PRIVATE_BUFF_H
 
+extern int vlogf(const char *fmt, va_list args); //Log formated
+extern void append_msg(const char *msg);
+
 extern void print_info();
 extern void trunc_info(); // trunc info
 extern char * copy_info(char outbuff[], size_t n); // copy info to outbuff

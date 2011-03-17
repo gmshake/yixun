@@ -13,7 +13,6 @@
 #include <unistd.h>
 
 #include <sys/types.h>
-#include <string.h> // memcpy()
 #include <strings.h> //  bzero()
 
 #include <arpa/inet.h>  // inet_addr()
@@ -41,12 +40,9 @@
 #include "print_hex.h"
 #endif
 
-const static uint8_t version[4] = {0x03, 0x00, 0x00, 0x06};
-const static uint8_t zeros[4] = {0x00, 0x00, 0x00, 0x00};
 
 static int sockListen;
 static int is_listening;
-
 
 void print_config(const struct yixun_msg *msg);
 
@@ -166,6 +162,9 @@ static int yixun_log_op(int op, struct yixun_msg *msg)
         switch (op) {
             case LOGIN:
             {
+                uint8_t version[4] = {0x03, 0x00, 0x00, 0x06}; /*hack: sigh...*/
+                uint8_t zeros[4] = {0x00, 0x00, 0x00, 0x00};
+                
                 uint8_t *sec_pwd = (uint8_t *)malloc(sizeof(uint8_t) * (strlen(msg->password) + 2));
                 if (sec_pwd == NULL) {
                     log_perror("[%s] malloc\n", __FUNCTION__);
@@ -365,8 +364,8 @@ int stop_listen()
  */
 int accept_client(struct yixun_msg *msg)
 {
-    static fd_set rfds;
-    static struct timeval tv;
+    fd_set rfds;
+    struct timeval tv;
 
 #if USE_PTHREAD
     pthread_testcancel();

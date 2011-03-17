@@ -24,6 +24,8 @@
 #define INFO_BUF_LEN 4097
 #endif
 
+int vlogf(const char *fmt, va_list args); //Log formated
+void append_msg(const char *msg); //往消息缓冲区放新信息 Thread safe
 
 void print_info();
 void trunc_info();
@@ -36,9 +38,7 @@ static char msg_buff[INFO_BUF_LEN];  //消息缓冲区
 static const char * msg_buff_end = msg_buff + sizeof(msg_buff);
 static char *head = msg_buff, *tail = msg_buff; //消息头、尾指针
 
-static int vlogf(const char *fmt, va_list args); //Log formated
 
-static void append_msg(const char *msg); //往消息缓冲区放新信息 Thread safe
 static char * get_msg();            //从缓冲区取信息 not thread safe
 inline static void trunc_buff();           //清空缓冲区(修改头指针和尾指针)
 inline static int buff_not_empty();
@@ -99,7 +99,7 @@ void free_print_info_locks()
 
 
 // Notice: Thread safe
-static void append_msg(const char *msg) 
+void append_msg(const char *msg) 
 {
     // 只保存最后一段
     if (strlen(msg) > sizeof(msg_buff) - 1)
@@ -161,7 +161,7 @@ inline static void trunc_buff()
 }
 
 /* va_list log format */
-static int vlogf(const char *fmt, va_list args)
+int vlogf(const char *fmt, va_list args)
 {
     char buff[INFO_BUF_LEN];
     int cnt = vsnprintf(buff, sizeof(buff), fmt, args);
