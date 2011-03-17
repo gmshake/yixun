@@ -51,7 +51,7 @@ struct yixun_msg msg;
     
     int retry_count = 3;
     do {
-        int rval = log_in(&msg);
+        int rval = login(&msg);
         [self changeUIState];
         dprint_info();
         

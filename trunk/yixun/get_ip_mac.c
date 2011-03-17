@@ -1,8 +1,7 @@
 #include <unistd.h>
 #include <stdio.h>      // fprintf
 
-#include <string.h>     // memcpy()
-#include <strings.h>    //  bzero()
+#include <strings.h>    //  bzero(), bcopy()
 #include <stdarg.h>
 #include <stdint.h>     // uint8_t
 
@@ -68,11 +67,11 @@ int get_ip_mac_by_socket(int socket, in_addr_t *ip_addr, uint8_t eth_addr[])
                 if (ioctl(socket, SIOCGIFADDR, &ifr) == 0) {
                     if (((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr.s_addr == sa_addr.sin_addr.s_addr) {// found it
 #if defined(__APPLE__) || defined(__FreeBSD__)
-                        memcpy(eth_addr, LLADDR((struct sockaddr_dl *)sa), ETHER_ADDR_LEN);
+                        bcopy(LLADDR((struct sockaddr_dl *)sa), eth_addr, ETHER_ADDR_LEN);
                         return 0;
 #else
                         if (ioctl(socket, SIOCGIFHWADDR, &ifr) == 0) {
-                            memcpy(eth_addr, ifr.ifr_hwaddr.sa_data, ETHER_ADDR_LEN);
+                            bcopy(ifr.ifr_hwaddr.sa_data, eth_addr, ETHER_ADDR_LEN);
                             return 0;
                         }
 #endif
@@ -135,7 +134,7 @@ int get_ip_mac_by_name(const char *ifname, in_addr_t *ip_addr, uint8_t eth_addr[
                 
                 if (((struct sockaddr_dl *)sa)->sdl_type == IFT_ETHER) {
                     if (strcmp(ifname, ifrq->ifr_name) == 0) {
-                        memcpy(eth_addr, LLADDR((struct sockaddr_dl *)sa), ETHER_ADDR_LEN); // Found MAC address
+                        bcopy(LLADDR((struct sockaddr_dl *)sa), eth_addr, ETHER_ADDR_LEN); // Found MAC address
                         close(sockfd);
                         return 0;
                     }
@@ -158,7 +157,7 @@ int get_ip_mac_by_name(const char *ifname, in_addr_t *ip_addr, uint8_t eth_addr[
             log_perror("ioctl");
             goto ERROR;
         }
-        memcpy(eth_addr, ifr.ifr_hwaddr.sa_data, ETHER_ADDR_LEN);
+        bcopy(ifr.ifr_hwaddr.sa_data, eth_addr, ETHER_ADDR_LEN);
 #endif
     }
     

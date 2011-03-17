@@ -34,25 +34,12 @@ static int log_type = LCONSOLE;
 
 void set_log_type(int flag)
 {
-#if USE_PTHREAD
-    if (pthread_mutex_trylock(&mutex)) pthread_mutex_lock(&mutex);
-#endif
     log_type = flag;
-#if USE_PTHREAD
-    pthread_mutex_unlock(&mutex);
-#endif
 }
 
 int get_log_type()
 {
-#if USE_PTHREAD
-    if (pthread_mutex_trylock(&mutex)) pthread_mutex_lock(&mutex);
-#endif
-    int flag = log_type;
-#if USE_PTHREAD
-    pthread_mutex_unlock(&mutex);
-#endif
-    return flag;
+    return log_type;
 }
 
 int log_log(const char *fmt, ...)
