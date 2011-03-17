@@ -10,8 +10,8 @@
 #include <arpa/inet.h> // inet_addr() inet_ntoa
 
 #include "radius.h"
+#include "log_xxx.h"
 #include "common_macro.h"
-#include "common_logs.h"
 #include "../route/route_op.h"
 
 #define LOCKFILE "/var/tmp/yixun.pid"        /* 锁文件 */
@@ -112,7 +112,7 @@ int main (int argc, char * const argv[])
     
     int retry_count = 3;
     do {
-        int rval = log_in(&msg);
+        int rval = login(&msg);
         if (rval == 0)
             break;
         else if (rval > 0) // Username or password error, do not retry
@@ -442,7 +442,7 @@ void cleanup()
         close(lockfd);
     }
     if (flag_gre_if_isset) remove_gre_if_tunnel();
-    if (connected) log_out(&msg);
+    if (connected) logout(&msg);
     if (flag_daemon) log_notice("Daemon ended.");
     if (log_opened) closelog();
 }

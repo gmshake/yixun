@@ -20,19 +20,22 @@
 #include <netinet/in.h> // in_addr_t sockaddr_in INADDR_ANY
 #include <sys/socket.h> // PF_INET, AF_INET, sockaddr, bind(), connect()...
 
-#include <errno.h>
+#include "log_xxx.h"
+
+#if USE_PTHREAD
 #include <pthread.h>
+#endif
 
 #include <fcntl.h>
+#include <errno.h>
 
-#include "common_macro.h"
-#include "common_logs.h"
 #include "rds_types.h"
 #include "yixun_config.h"
 #include "convert_code.h"
 #include "encode_password.h"
 #include "get_ip_mac.h"
 #include "radius.h"
+#include "common_macro.h"
 
 #ifdef DEBUG
 #include "print_hex.h"
@@ -45,7 +48,7 @@ static int sockListen;
 static int is_listening;
 
 
-void print_config(struct yixun_msg *msg);
+void print_config(const struct yixun_msg *msg);
 
 static int pre_config(struct yixun_msg *msg);
 static int yixun_log_op(int op, struct yixun_msg *msg);
@@ -118,14 +121,7 @@ static int pre_config(struct yixun_msg *msg)
 #define KEEPALIVE 0x03
 static int yixun_log_op(int op, struct yixun_msg *msg)
 {
-    int rval = 0;
-    /* 重置发送缓冲区信息 */
-    if (op != msg->last_op) {
-        msg->last_op = op;
-        msg->make_send_buff_done = 0;
-        bzero(msg->s_buff, sizeof(msg->s_buff));
-    }
-    
+    int rval = 0;   
     if (!msg->pre_config_done) {
         if (pre_config(msg) < 0)
             return -1;
@@ -154,7 +150,10 @@ static int yixun_log_op(int op, struct yixun_msg *msg)
         goto ERROR;
     }      
 
-    if (!msg->make_send_buff_done) {
+    /* when op is same as the last op, then there is no\
+     * need to re-make a same send packet
+     */
+    if (op != msg->last_op) {
         if (get_ip_mac_by_socket(sockfd, &msg->gre_local, msg->mac ? NULL : msg->eth_addr) < 0) {
             log_err("[%s] get ip address and eth_addr\n", __FUNCTION__);
             rval = -1;
@@ -163,6 +162,7 @@ static int yixun_log_op(int op, struct yixun_msg *msg)
         if (msg->clientip == NULL || msg->gre_src == 0 || msg->gre_src == 0xffffffff)
             msg->gre_src = msg->gre_local;
         
+        bzero(msg->s_buff, sizeof(msg->s_buff));
         switch (op) {
             case LOGIN:
             {
@@ -186,12 +186,12 @@ static int yixun_log_op(int op, struct yixun_msg *msg)
                 break;
             }
             case LOGOUT:
-                make_rds_packet(msg->s_buff, u_logout); //Hack:退出登录和保持活动连接只有这一个地方有差别
-                add_segment(msg->s_buff, c_ip, sizeof(in_addr_t), sizeof(in_addr_t), (char *)&msg->gre_src);
-                add_segment(msg->s_buff, c_user, MAX_USER_NAME_LEN, strlen(msg->username), (char *)msg->username);
-                break;
+                //Hack:退出登录和保持活动连接只有packet_type有差别
+                make_rds_packet(msg->s_buff, u_logout);
+                goto LOGOUT_KEEPALIVE;
             case KEEPALIVE:
                 make_rds_packet(msg->s_buff, u_keepalive);
+LOGOUT_KEEPALIVE:
                 add_segment(msg->s_buff, c_ip, sizeof(in_addr_t), sizeof(in_addr_t), (char *)&msg->gre_src);
                 add_segment(msg->s_buff, c_user, MAX_USER_NAME_LEN, strlen(msg->username), (char *)msg->username);
                 break;
@@ -203,7 +203,7 @@ static int yixun_log_op(int op, struct yixun_msg *msg)
                 goto ERROR;
         }
         msg->s_buff_len = RDS_PACKET_LEN(msg->s_buff);
-        msg->make_send_buff_done = -1;
+        msg->last_op = op;
     }
     
     tv.tv_sec = SND_TIMEOUT;
@@ -236,7 +236,10 @@ static int yixun_log_op(int op, struct yixun_msg *msg)
             ssize_t ret = recv(sockfd, r_buff, R_BUF_LEN, 0);
             if (ret <= 0) {
                 if (ret == 0) {
-                    log_err("[%s] receive: Auth server %s has closed its half side of the connection\n", __FUNCTION__, inet_ntoa(auth_server.sin_addr));
+                    log_err("[%s] receive: Auth server %s \
+                            has closed its half side of the connection\n", \
+                            __FUNCTION__, \
+                            inet_ntoa(auth_server.sin_addr));
                 } else {
                     if (errno == EAGAIN)
                         log_err("[%s] recv: time out\n", __FUNCTION__);
@@ -253,7 +256,6 @@ static int yixun_log_op(int op, struct yixun_msg *msg)
             break;
         }
         case LOGOUT:
-            break;
         case KEEPALIVE:
             break;
         default:
@@ -270,11 +272,11 @@ ERROR:
 }
 
 /*
- * log_in(), send login packet
+ * login(), send login packet
  * @param msg, in/out
  * return 0 on success, otherwise -1;
  */
-int log_in(struct yixun_msg *msg)
+int login(struct yixun_msg *msg)
 {
     int rval = yixun_log_op(LOGIN, msg);
     if (rval == 0)
@@ -283,11 +285,11 @@ int log_in(struct yixun_msg *msg)
 }
 
 /*
- * log_out(), send logout packet
+ * logout(), send logout packet
  * @param msg, in
  * return 0 on success, otherwise -1;
  */
-int log_out(struct yixun_msg *msg)
+int logout(struct yixun_msg *msg)
 {
     return yixun_log_op(LOGOUT, msg);
 }
@@ -366,7 +368,9 @@ int accept_client(struct yixun_msg *msg)
     static fd_set rfds;
     static struct timeval tv;
 
+#if USE_PTHREAD
     pthread_testcancel();
+#endif
 
     tv.tv_sec = 1;
     tv.tv_usec = 0;
@@ -379,7 +383,10 @@ int accept_client(struct yixun_msg *msg)
         return 0;
     }
     
+#if USE_PTHREAD
     pthread_testcancel();
+#endif
+    
     if (FD_ISSET(sockListen, &rfds)) {
         BUFF_ALIGNED(r_buff, R_BUF_LEN);
         struct sockaddr_in r_client;
@@ -430,7 +437,7 @@ int accept_client(struct yixun_msg *msg)
  * print_config(), print configuration from returned by server
  * @msg,    in
  */
-void print_config(struct yixun_msg *msg)
+void print_config(const struct yixun_msg *msg)
 {
     struct in_addr a[5];
     char p1[5][20];
@@ -483,7 +490,6 @@ static int do_with_server_info(void *buff, struct yixun_msg *msg, int sockfd)
             if (start_listen() < 0)
                 return -1;
             
-            //char packet[sizeof(struct rds_packet_header)];
             BUFF_ALIGNED(packet, sizeof(struct rds_packet_header));
             make_rds_packet(packet, u_ack);
             if (send(sockfd, packet, sizeof(struct rds_packet_header), 0) < 0) {
@@ -558,16 +564,30 @@ static int get_parameters(const void *buff, struct yixun_msg *msg)
 #endif
 			return -1;
 		}
+#ifdef DEBUG
+        if ((p->type == s_gre_d ||\
+            p->type == s_gre_l ||\
+            p->type == s_gre_r ||\
+            p->type == s_timeout ||\
+            p->type == s_mask ||\
+            p->type == s_upband ||\
+            p->type == s_downband) &&\
+            (size_t)&p->content % sizeof(int) != 0)
+            log_warning("[%s] line:%d buffer(%p) is not aligned to %d bytes\n", __FUNCTION__, __LINE__, &p->content, sizeof(int));
+#endif
 		switch (p->type) {
 			case s_gre_d:
 				msg->gre_dst = *((in_addr_t *)p->content);
 				break;
 			case s_gre_l:
-                if (msg->gre_local == 0)    /* hack: 陕西的某某公司做的那个客户端在这里有些出入，\
-                                            * 本来应该在接入服务器加上一条到gre_local的路由信息的，
-                                            * 不知是出于什么目的没有这样做，导致实际的实现，客户端对发出的包作封包，\
-                                            * 而接入服务器(路由器)却不对流向客户端这边的包作GRE封包处理，所以，\
-                                            * 实际上，这里的信息是被忽略了的，如果不忽略，反而连接不上
+                if (msg->gre_local == 0)   /* hack: 这里服务器返回的IP地址是10.0.x.x
+                                            * 从GRE tunnel看来，这个是正确的，不过
+                                            * 实际上，如果使用10.0.x.x作为GRE tunnel
+                                            * local端IP的话，网络反而是不通的，原因是
+                                            * 陕西某某公司做的服务端并未添加 route 表
+                                            * 项到10.0.x.x(tunnel)，因此，从客户端
+                                            * 可以发包出去，却收不到回来的包，因此，这里
+                                            * 的参数忽略
                                             */
                     msg->gre_local = *((in_addr_t *)p->content);
 				break;

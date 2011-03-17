@@ -15,11 +15,11 @@ CC = gcc
 CPP = g++
 CFLAGS = -O2 -Wall
 CCFLAGS = ${CFLAGS}
-LIBS = -lpthread
+LIBS =
 CFLAGS += ${INC}
 CCFLAGS += ${INC}
 
-OBJS = common_logs.o radius.o convert_code.o encode_password.o get_ip_mac.o login_state.o print_hex.o ../route/route_op.o
+OBJS = common_logs.o convert_code.o encode_password.o get_ip_mac.o log_xxx.o print_hex.o radius.o ../route/route_op.o
 
 PROGS = yixun
 
