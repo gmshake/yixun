@@ -7,7 +7,6 @@
  *
  */
 
-#include <string.h>
 #include <stdint.h>
 #include <netinet/in.h> // in_addr_t sockaddr_in INADDR_ANY
 
