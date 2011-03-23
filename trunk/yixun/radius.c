@@ -13,7 +13,8 @@
 #include <unistd.h>
 
 #include <sys/types.h>
-#include <strings.h> //  bzero()
+#include <string.h>     // strcpy()...
+#include <strings.h>    // bzero()
 
 #include <arpa/inet.h>  // inet_addr()
 #include <netinet/in.h> // in_addr_t sockaddr_in INADDR_ANY

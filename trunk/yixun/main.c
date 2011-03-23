@@ -29,17 +29,9 @@ static int flag_gre_if_isset = 0;
 
 static in_addr_t default_route = 0;
 
-//static char * interface;
-/*
-static char * username;
-static char * password;
-static char * serverip;
-static char * clientip;
-static char * mac;
- */
 static struct yixun_msg msg;
 
-static char * conf_file;
+static char *conf_file;
 
 static int extr_argc;
 static char * const *extr_argv;
@@ -53,7 +45,7 @@ int set_gre_if_tunnel();
 int remove_gre_if_tunnel();
 int lock_file(const char *lockfile); // On error, return -1;
 void cleanup();
-void cleanup_exit(int i);
+//void cleanup_exit(int i);
 
 int main (int argc, char * const argv[])
 {

@@ -1,7 +1,8 @@
 #include <unistd.h>
 #include <stdio.h>      // fprintf
 
-#include <strings.h>    //  bzero(), bcopy()
+#include <string.h>     // strcpy(), strncpy()
+#include <strings.h>    // bzero(), bcopy()
 #include <stdarg.h>
 #include <stdint.h>     // uint8_t
 
@@ -9,7 +10,7 @@
 #include <sys/socket.h> // socket()
 #include <sys/ioctl.h>  // SIOCGIFCONF, SIOCGIFADDR
 
-#include <net/ethernet.h> //ETHER_ADDR_LEN
+#include <net/ethernet.h>   //ETHER_ADDR_LEN
 #include <net/if.h>     //ifreq, ifconf
 
 #if defined(__APPLE__) || defined(__FreeBSD__)

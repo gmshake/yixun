@@ -9,10 +9,6 @@
 #include <strings.h>
 #include <iconv.h>
 
-#ifdef DEBUG
-#include <stdio.h>
-#endif
-
 #include "log_xxx.h"
 
 int convert_code(char *from_charset, char *to_charset, \
