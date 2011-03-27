@@ -2,6 +2,6 @@
 set -x
 aclocal
 autoheader
-automake --foreigh --add-missing --copy
+automake --foreign --add-missing --copy
 autoconf
 
