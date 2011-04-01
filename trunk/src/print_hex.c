@@ -1,3 +1,12 @@
+/*
+ *  print_hex.c
+ *  YiXun
+ *
+ *  Created by Summer Town on 9/16/10.
+ *  Copyright 2010 __MyCompanyName__. All rights reserved.
+ *
+ */
+
 #include <stdint.h>     // uint8_t
 #include <string.h>
 #include <stdlib.h>

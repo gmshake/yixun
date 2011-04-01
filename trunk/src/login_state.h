@@ -1,5 +1,5 @@
 /*
- *  get_login_state.h
+ *  login_state.h
  *  YiXun
  *
  *  Created by Summer Town on 9/25/10.

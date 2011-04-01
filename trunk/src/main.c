@@ -1,3 +1,14 @@
+/*
+ * Copyright (c) 2010, 2011 SummerTown
+ *
+ * @yixun main() routine
+ *
+ */
+
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
 #include <unistd.h> // ftruncate()
 #include <stdlib.h> // for daemon()
 #include <string.h> // bzero() strlen() ...
@@ -45,7 +56,14 @@ int set_gre_if_tunnel();
 int remove_gre_if_tunnel();
 int lock_file(const char *lockfile); // On error, return -1;
 void cleanup();
-//void cleanup_exit(int i);
+
+#if ! HAVE_STPCPY
+static char * stpcpy(char *to, char *from)
+{
+	for(; (*to = *from); ++from, ++to);
+	return to;
+}
+#endif
 
 int main (int argc, char * const argv[])
 {
@@ -70,15 +88,6 @@ int main (int argc, char * const argv[])
     if (conf_file != NULL)
         parse_conf_file(conf_file);
 
-    /*
-     * not required
-    if (set_config(username, password, serverip, clientip, mac) < 0)
-    {
-        log_err("[main] setting config\n");
-        return -1;
-    }
-     */
-    
     if (flag_daemon) {
         if (daemon(0, 0) < 0) {
             log_perror("[main] daemon");

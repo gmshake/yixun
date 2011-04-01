@@ -3,11 +3,17 @@
 
 AC_PREREQ(2.61)
 AC_INIT(yixun, 1.1, gmshake@gmail.com)
-AC_CONFIG_SRCDIR([gre-config/main.c])
+AC_CONFIG_SRCDIR([src/main.c])
 AC_CONFIG_HEADER([config.h])
+AC_CANONICAL_HOST
 AM_INIT_AUTOMAKE
 
 # Checks for programs.
+AC_ARG_ENABLE(debug, 
+			  [AC_HELP_STRING([--enable-debug], [Build a debug version])],
+			  [CFLAGS="$CFLAGS -g -O0 -DDEBUG -Wall"], 
+			  [CFLAGS="$CFLAGS -Os -Wall"])
+
 AC_PROG_AWK
 AC_PROG_CC
 AC_PROG_CXX
@@ -17,12 +23,35 @@ AC_PROG_MKDIR_P
 #AC_PROG_RANLIB
 
 # Checks for libraries.
-# FIXME: Replace `main' with a function in `-liconv':
-AC_CHECK_LIB([iconv], [iconv])
+have_iconv="yes"
+AC_ARG_ENABLE(iconv, 
+			  [AC_HELP_STRING([--disable-iconv], [Do NOT compile with iconv])], 
+			  [have_iconv="no"], 
+			  ,)
+if test "x$have_iconv" = "xyes"; then
+	case $host_os in
+		*bsd*)
+		CFLAGS="$CFLAGS -I/usr/local/include"
+		LIBS="$LIBS -L/usr/local/lib"
+		;;
+	esac
+
+	AC_SEARCH_LIBS(iconv_open, iconv, , [AC_SEARCH_LIBS(libiconv_open, iconv, , [have_iconv="no"])])
+	if test "x$have_iconv" = "xno"; then
+		AC_MSG_WARN([Could not find an iconv implementation, see INSTALL])
+		AC_DEFINE([HAVE_ICONV], [0], [Define to 1 if iconv library is installed and enabled])
+	else
+		AC_DEFINE([HAVE_ICONV], [1], [Define to 1 if iconv library is installed and enabled])
+	fi
+fi
 
 # Checks for header files.
 AC_HEADER_STDC
+
 AC_CHECK_HEADERS([arpa/inet.h fcntl.h netinet/in.h stdint.h stdlib.h string.h strings.h sys/ioctl.h sys/socket.h syslog.h unistd.h])
+if test "x$have_iconv" = "xyes"; then
+	AC_CHECK_HEADERS([iconv.h])
+fi
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_C_CONST

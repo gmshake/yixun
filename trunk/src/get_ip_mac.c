@@ -1,3 +1,12 @@
+/*
+ *  get_ip_mac.c
+ *  YiXun
+ *
+ *  Created by Summer Town on 9/18/10.
+ *  Copyright 2010 __MyCompanyName__. All rights reserved.
+ *
+ */
+
 #include <unistd.h>
 #include <stdio.h>      // fprintf
 
