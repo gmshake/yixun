@@ -1,3 +1,12 @@
+/*
+ *  get_ip_mac.h
+ *  YiXun
+ *
+ *  Created by Summer Town on 9/18/10.
+ *  Copyright 2010 __MyCompanyName__. All rights reserved.
+ *
+ */
+
 #ifndef _GETIPMAC_H
 #define _GETIPMAC_H
 

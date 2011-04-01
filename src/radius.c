@@ -224,6 +224,9 @@ LOGOUT_KEEPALIVE:
         case LOGIN:
         {
             BUFF_ALIGNED(r_buff, R_BUF_LEN); // receive buffer
+#ifdef DEBUG
+            log_info("address of r_buff is %p\n", &r_buff);
+#endif
             
             tv.tv_sec = RCV_TIMEOUT;
             tv.tv_usec = 0;

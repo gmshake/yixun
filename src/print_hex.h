@@ -1,3 +1,12 @@
+/*
+ *  print_hex.h
+ *  YiXun
+ *
+ *  Created by Summer Town on 9/16/10.
+ *  Copyright 2010 __MyCompanyName__. All rights reserved.
+ *
+ */
+
 #ifndef _PRINT_HEX_H
 #define _PRINT_HEX_H
 
