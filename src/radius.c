@@ -235,7 +235,7 @@ LOGOUT_KEEPALIVE:
                 rval = -3;
                 goto ERROR;
             }
-            
+
             ssize_t ret = recv(sockfd, r_buff, R_BUF_LEN, 0);
             if (ret <= 0) {
                 if (ret == 0) {
@@ -625,7 +625,6 @@ static int get_parameters(const void *buff, struct yixun_msg *msg)
                 int rval = convert_code("GB18030", "UTF-8", \
                                         p->content, strlen(p->content), \
                                         msg->server_info, len);
-                if (rval != 0) dprintf("Warning, convert_code returned %d\n", rval);
                 
                 strcat(msg->server_info, "\n");
                 
