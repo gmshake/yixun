@@ -15,25 +15,27 @@
 #include <strings.h>
 #include <iconv.h>
 #include "log_xxx.h"
-#else
-#include <string.h>
 #endif
 
+#include <string.h>
 
 int convert_code(char *from_charset, char *to_charset, \
-				 const char *inbuf, size_t inlen, \
+				 char *inbuf, size_t inlen, \
                  char *outbuf, size_t outlen)
 {
 #if HAVE_ICONV && HAVE_ICONV_H
     iconv_t cd;
     cd = iconv_open(to_charset, from_charset);
-    if (cd == 0) {
-        log_perror("Error iconv_open");
+    if (cd == (iconv_t)(-1)) {
+        log_perror("[%s] iconv_open(%s, %s)", __FUNCTION__, to_charset, from_charset);
+        log_warning("[%s] pass through charset convert\n", __FUNCTION__);
+        strncpy(outbuf, inbuf, inlen < outlen ? inlen : outlen);
+        outbuf[outlen - 1] = '\0';
         return -1;
     }
     
     bzero(outbuf, outlen);
-    if (iconv(cd, (char **)&inbuf, &inlen, &outbuf, &outlen) == (size_t)-1) {
+    if (iconv(cd, (char **)&inbuf, &inlen, &outbuf, &outlen) == (size_t)(-1)) {
         log_perror("Error iconv");
 		iconv_close(cd);
 		return -1;

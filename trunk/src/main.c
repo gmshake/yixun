@@ -26,6 +26,7 @@
 #include "../route/route_op.h"
 
 #define LOCKFILE "/var/tmp/yixun.pid"        /* 锁文件 */
+
 static int lockfd; // lockfile file description
 static int flag_changeroute = 0;
 static int flag_daemon      = 0;
