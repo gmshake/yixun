@@ -22,6 +22,12 @@ AC_PROG_CPP
 AC_PROG_MKDIR_P
 #AC_PROG_RANLIB
 
+case $host_vendor in
+	*openwrt*)
+	AC_DEFINE([YIXUN_PID], ["/var/run/yixun.pid"], [pid file])
+	;;
+esac
+
 # Checks for libraries.
 have_iconv="yes"
 AC_ARG_ENABLE(iconv, 
@@ -66,7 +72,7 @@ AC_TYPE_UINT8_T
 
 # Checks for library functions.
 AC_PROG_GCC_TRADITIONAL
-AC_FUNC_MALLOC
+#AC_FUNC_MALLOC
 AC_FUNC_SELECT_ARGTYPES
 AC_TYPE_SIGNAL
 AC_FUNC_VPRINTF
