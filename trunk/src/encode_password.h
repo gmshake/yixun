@@ -10,6 +10,6 @@
 #ifndef _ENCODE_PASSWORD_H
 #define _ENCODE_PASSWORD_H
 
-extern uint8_t * encode_pwd_with_ip(uint8_t sec_pwd[], const char *pwd, in_addr_t ip_addr); //用加密算法加密传送的密码
+extern uint8_t *encode_pwd_with_ip(uint8_t sec_pwd[], const char *pwd, in_addr_t ip_addr);	//用加密算法加密传送的密码
 
-#endif //_ENCODE_PASSWORD_H
+#endif				//_ENCODE_PASSWORD_H

@@ -15,35 +15,42 @@ static callback _callback;
 
 static pthread_rwlock_t rwlock = PTHREAD_RWLOCK_INITIALIZER;
 
-enum login_state get_login_state()
+enum login_state
+get_login_state()
 {
-    if (pthread_rwlock_tryrdlock(&rwlock)) pthread_rwlock_rdlock(&rwlock);
-    enum login_state rvl = state;
-    pthread_rwlock_unlock(&rwlock);
-    return rvl;
+	if (pthread_rwlock_tryrdlock(&rwlock))
+		pthread_rwlock_rdlock(&rwlock);
+	enum login_state rvl = state;
+	pthread_rwlock_unlock(&rwlock);
+	return rvl;
 }
 
-void set_login_state(enum login_state s)
+void
+set_login_state(enum login_state s)
 {
-    if (pthread_rwlock_trywrlock(&rwlock)) pthread_rwlock_wrlock(&rwlock);
-    state = s;
-    pthread_rwlock_unlock(&rwlock);
-    //if (_callback) _callback(s);
-    //if (_callback) _callback(id, s, 1);
-    return;
+	if (pthread_rwlock_trywrlock(&rwlock))
+		pthread_rwlock_wrlock(&rwlock);
+	state = s;
+	pthread_rwlock_unlock(&rwlock);
+	//if (_callback) _callback(s);
+	//if (_callback) _callback(id, s, 1);
+	return;
 }
 
-void set_state_changed_action(callback p)
+void
+set_state_changed_action(callback p)
 {
-    _callback = p;
+	_callback = p;
 }
 
-void unset_state_changed_action()
+void
+unset_state_changed_action()
 {
-    _callback = NULL;
+	_callback = NULL;
 }
 
-void free_login_state_locks()
+void
+free_login_state_locks()
 {
-    pthread_rwlock_destroy(&rwlock);
+	pthread_rwlock_destroy(&rwlock);
 }

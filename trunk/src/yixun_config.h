@@ -36,7 +36,7 @@
 #define MSG_SERVER "10.0.100.3"
 #endif
 */
- 
+
 //(客户端)接收连接数量
 #ifndef MAX_CLIENT
 #define MAX_CLIENT 10
@@ -81,4 +81,4 @@
 #define SEGMENT_MAX_LEN 256
 #endif
 
-#endif //_YIXUN_CONFIG_H
+#endif				//_YIXUN_CONFIG_H

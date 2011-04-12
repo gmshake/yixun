@@ -11,12 +11,12 @@
 #define _GET_LOGIN_STATE_H
 
 enum login_state {
-    not_login,
-    connecting,
-    connected,
+	not_login,
+	connecting,
+	connected,
 };
 
-typedef void (*callback)(enum login_state s);
+typedef void (*callback) (enum login_state s);
 
 extern void set_login_state(enum login_state s);
 extern enum login_state get_login_state();
