@@ -1,16 +1,23 @@
 
+#ifdef HAVE_CONFIG_H
 #include "config.h"
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
 #include <syslog.h>
 
-#include <sys/ioctl.h>		// ioctl()
-#include <sys/socket.h>		// place it before <net/if.h> struct sockaddr
+#include <sys/ioctl.h>		//ioctl()
+#include <sys/socket.h>		//place it before <net/if.h> struct sockaddr
+#if defined(__APPLE__) || defined(__linux__)
+#include <sys/wait.h>
+#endif
 #if defined(__FreeBSD__)
-#include <sys/module.h>
-#include <sys/linker.h>		// kldload()
+#include <sys/param.h>
+#include <sys/linker.h>		//kldload()
+#include <sys/module.h>		//modfind()
 #endif
 
 #include <net/if.h>		//struct ifreq
@@ -23,10 +30,11 @@
 #include <netinet/in_var.h>	//struct in_aliasreq
 #endif
 
-#include <arpa/inet.h>		// inet_aton()
-#include <netinet/ip.h>		// struct ip, /* linux: struct iphdr */
+#include <arpa/inet.h>		//inet_aton()
+#include <netinet/ip.h>		//struct ip, /* linux: struct iphdr */
 
 #if defined(__linux__)
+#include <fcntl.h>			//open()...
 #include <linux/if_tunnel.h>	//SIOCADDTUNNEL, SIOCGETTUNNEL, SIOCDELTUNNEL
 #endif
 
@@ -38,22 +46,26 @@
 #define inet_itoa(x) inet_ntoa(*(struct in_addr*)&(x))
 #endif
 
+#if defined(__linux__)
+#define GRENAME "greyixun"
+#endif
+
 static struct rt_list {
 	in_addr_t dst;
 	in_addr_t mask;
 	struct rt_list *next;
 } *rt_list;
 
-//static char *progname = NULL;
 static int flag_chksum = 0;
 static int flag_revert = 0;
 static int flag_changeroute = 0;
 
 static in_addr_t local, remote, src, dst, netmask, gateway;
 
-//void usage();
-
 void parse_args(int argc, char *const argv[]);
+
+
+int	load_gre_module();
 
 int find_unused_if(char ifname[]);
 int find_if_with_addr(char ifname[], in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote);
@@ -64,8 +76,14 @@ int delete_if_addr_tunnel(char ifname[]);
 int add_gre_if(in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote, in_addr_t mask);
 int remove_gre_if(in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote);
 
-//int set_if_flag(char ifname[], int flag);
-//static void free_rt_list(struct rt_list *list);
+#if defined(__linux__)
+static int linux_gre_yixun_clonecreate();
+#endif
+
+#if defined(__FreeBSD__)
+static int bsd_gre_if_clonecreate(char name[]);
+#endif
+
 
 int
 main(int argc, char *const argv[])
@@ -92,12 +110,12 @@ main(int argc, char *const argv[])
 	if (!flag_revert) {
 		char ifname[IFNAMSIZ];
 		if (find_unused_if(ifname) < 0) {
-			fprintf(stderr, "add_gre_if: unable to find unused gre interface.\n");
+			fprintf(stderr, "unable to find unused gre interface.\n");
 			return -1;
 		}
 
 		if (set_if_addr_tunnel(ifname, src, dst, local, remote, netmask) < 0) {
-			fprintf(stderr, "add_gre_if: error set address of %s\n", ifname);
+			fprintf(stderr, "error set address of %s\n", ifname);
 			return -1;
 		}
 
@@ -322,12 +340,82 @@ void usage()
 }
  */
 
+int
+load_gre_module()
+{
+#if defined(__APPLE__)
+	printf("OSX, kextload GRE.kext\n");
+	int pid;
+	if ((pid = fork()) < 0)
+		return -1;
+
+	if (pid == 0) {
+		execle("/sbin/kextload", "kextload", "/Library/Extensions/GRE.kext", NULL, NULL);
+		exit(1);
+	}
+
+	while (waitpid(pid, 0, 0) < 0) {
+		if (errno == EINTR)
+			continue;
+		return -1;
+	}
+	return 0;
+#else
+#if defined(__FreeBSD__)
+	printf("FreeBSD, kldload if_gre\n");
+	if (modfind("if_gre") < 0) {
+		printf("load if_gre...\n");
+		if (kldload("if_gre") < 0) {
+			perror("can't load if_gre");
+			return -1;
+		}
+	}
+	return 0;
+#else
+#if defined(__linux__)
+	printf("Linux, insmod ip_gre\n");
+	int fd;
+	char buff[128];
+	if ((fd = open("/proc/modules", O_RDONLY)) >= 0) {
+		int i;
+		while ((i = read(fd, buff, sizeof(buff)) > 0)) {
+			if (strstr(buff, "ip_gre")) {
+				close(fd);
+				return 0;
+			}
+		}
+		close(fd);
+		/* module ip_gre not found, try to load ip_gre */
+		printf("load ip_gre...\n");
+		int pid;
+		if ((pid = fork()) < 0)
+			return -1;
+
+		if (pid == 0) {
+			execle("/sbin/insmod", "insmod", "ip_gre", NULL, NULL);
+			exit(1);
+		}
+
+		while (waitpid(pid, 0, 0) < 0) {
+			if (errno == EINTR)
+				continue;
+			return -1;
+		}
+		return 0;
+	}
+	return -1;
+#else
+	fprintf(stderr, "%s: OS not supported\n", __FUNCTION__);
+	return -1;
+#endif
+#endif
+#endif
+}
 
 #define MAX_GREIF_CNT 16
 int
 find_unused_if(char ifname[])
 {
-	int i;
 	int sock;
 	struct ifreq ifrq;
 
@@ -336,6 +424,22 @@ find_unused_if(char ifname[])
 		return -1;
 	}
 
+#if defined(__linux__)
+	bzero(&ifrq, sizeof(ifrq));
+	sprintf(ifrq.ifr_name, GRENAME);
+	if (ioctl(sock, SIOCGIFFLAGS, &ifrq) < 0) {
+		if (linux_gre_yixun_clonecreate() < 0) {
+			fprintf(stderr, "%s ioctl(\"%s\"):%s\n", __FUNCTION__, GRENAME, strerror(errno));
+			close(sock);
+			return -1;
+		}
+	}
+
+	close(sock);
+	strcpy(ifname, GRENAME);
+	return 0;
+#else
+	int i;
 	for (i = 0; i < MAX_GREIF_CNT; i++) {
 		bzero(&ifrq, sizeof(ifrq));
 		sprintf(ifrq.ifr_name, "gre%d", i);
@@ -348,7 +452,15 @@ find_unused_if(char ifname[])
 	}
 
 	close(sock);
+
+#if defined(__FreeBSD__)
+	if (i >= MAX_GREIF_CNT)
+		if (bsd_gre_if_clonecreate(ifname) < 0)
+			return -1;
+#endif
+
 	return i < MAX_GREIF_CNT ? 0 : -1;
+#endif
 }
 
 int
@@ -533,35 +645,6 @@ ERROR:
 	return -1;
 }
 
-/*
-int set_if_tunnel(char ifname[], in_addr_t src, in_addr_t dst)
-{
-    int sock;    
-    if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-        perror("set_if_tunnel: socket");
-        return -1;
-    }
-    
-    struct ifreq ifrq;
-    bzero(&ifrq, sizeof(ifrq));
-	strncpy(ifrq.ifr_name, ifname, IFNAMSIZ);
-    ifrq.ifr_addr.sa_family = AF_INET;
-    
-    if (ioctl(sock, SIOCDIFPHYADDR, &ifrq) < 0) {
-        if (errno != EADDRNOTAVAIL) {
-            perror("set_if_addr_tunnel: delete if addr");
-            goto ERROR;
-        }
-    }
-    
-    close(sock);
-    return 0;
-ERROR:
-    close(sock);
-    return -1;
-}
-*/
-
 int
 delete_if_addr_tunnel(char ifname[])
 {
@@ -630,66 +713,31 @@ ERROR:
 	return -1;
 }
 
-#if defined(__FreeBSD__)
-void
-ifmaybeload(const char *name)
+#if defined(__linux__)
+static int
+linux_gre_yixun_clonecreate()
 {
-#define MOD_PREFIX_LEN          3	/* "if_" */
-	struct module_stat mstat;
-	int fileid, modid;
-	char ifkind[IFNAMSIZ + MOD_PREFIX_LEN], ifname[IFNAMSIZ], *dp;
-	const char *cp;
-
-	/* loading suppressed by the user */
-	if (noload)
-		return;
-
-	/* trim the interface number off the end */
-	strlcpy(ifname, name, sizeof(ifname));
-	for (dp = ifname; *dp != 0; dp++)
-		if (isdigit(*dp)) {
-			*dp = 0;
-			break;
-		}
-
-	/* turn interface and unit into module name */
-	strcpy(ifkind, "if_");
-	strlcpy(ifkind + MOD_PREFIX_LEN, ifname, sizeof(ifkind) - MOD_PREFIX_LEN);
-
-	/* scan files in kernel */
-	mstat.version = sizeof(struct module_stat);
-	for (fileid = kldnext(0); fileid > 0; fileid = kldnext(fileid)) {
-		/* scan modules in file */
-		for (modid = kldfirstmod(fileid); modid > 0; modid = modfnext(modid)) {
-			if (modstat(modid, &mstat) < 0)
-				continue;
-			/* strip bus name if present */
-			if ((cp = strchr(mstat.name, '/')) != NULL) {
-				cp++;
-			} else {
-				cp = mstat.name;
-			}
-			/* already loaded? */
-			if (strncmp(ifname, cp, strlen(ifname) + 1) == 0 || strncmp(ifkind, cp, strlen(ifkind) + 1) == 0)
-				return;
-		}
-	}
-
-	/* not present, we should try to load it */
-	kldload(ifkind);
+	return -1;
 }
+#endif
 
-
+#if defined(__FreeBSD__)
 static int
 bsd_gre_if_clonecreate(char name[])
 {
+	int sock;
 	struct ifreq ifr;
 
-	memset(&ifr, 0, sizeof(ifr));
-	(void)strlcpy(ifr.ifr_name, "gre", sizeof(ifr.ifr_name));
-	if (ioctl(s, SIOCIFCREATE2, &ifr) < 0) {
-		perror("SIOCIFCREATE2");
+	if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+		perror("bsd_gre_if_clonecreate: socket");
 		return -1;
+	}
+
+	bzero(&ifr, sizeof(ifr));
+	(void)strlcpy(ifr.ifr_name, "gre", sizeof(ifr.ifr_name));
+	if (ioctl(sock, SIOCIFCREATE2, &ifr) < 0) {
+		perror("SIOCIFCREATE2");
+		goto ERROR;
 	}
 
 	if (strncmp("gre", ifr.ifr_name, sizeof(ifr.ifr_name)) != 0) {
@@ -697,23 +745,29 @@ bsd_gre_if_clonecreate(char name[])
 #ifdef DEBUG
 		printf("%s\n", name);
 #endif
+		close(sock);
 		return 0;
 	}
-	return -2;
+
+ERROR:
+	close(sock);
+	return -1;
 }
 #endif
 
 int
 add_gre_if(in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote, in_addr_t mask)
 {
+	if (load_gre_module() < 0)
+		return -1;
 	char ifname[IFNAMSIZ];
 	if (find_unused_if(ifname) < 0) {
-		fprintf(stderr, "add_gre_if: unable to find unused gre interface.\n");
+		fprintf(stderr, "%s: unable to find unused gre interface.\n", __FUNCTION__);
 		return -1;
 	}
 
 	if (set_if_addr_tunnel(ifname, src, dst, local, remote, mask) < 0) {
-		fprintf(stderr, "add_gre_if: error set address of %s\n", ifname);
+		fprintf(stderr, "%s: error set address of %s\n", __FUNCTION__, ifname);
 		return -1;
 	}
 
