@@ -50,9 +50,8 @@ void print_config(const struct yixun_msg *msg);
 static int pre_config(struct yixun_msg *msg);
 static int yixun_log_op(int op, struct yixun_msg *msg);
 
-/*
- * 返回 0 表示无错， 返回正数，表示出错原因(e_user, e_pwd ....)
- */
+
+/* 返回 0 表示无错， 返回正数，表示出错原因(e_user, e_pwd ....) */
 static int do_with_server_info(void *buff, struct yixun_msg *msg, int sockfd);
 
 /* 认证通过后，获取接入服务器给的参数 */

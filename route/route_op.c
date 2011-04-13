@@ -218,7 +218,7 @@ len = ROUNDUP(u.sa.sa_len); bcopy((char *)&(u), cp, len); cp += len;\
 				goto end;
 			}
 			if (msg.msghdr.rtm_msglen > len) {
-				fprintf(stderr, "message length mismatch, in packet %d, returned %lu\n", msg.msghdr.rtm_msglen, len);
+				fprintf(stderr, "message length mismatch, in packet %d, returned %lu\n", msg.msghdr.rtm_msglen, (unsigned long)len);
 			}
 			if (msg.msghdr.rtm_errno) {
 				fprintf(stderr, "message indicates error %d, %s\n", msg.msghdr.rtm_errno, strerror(msg.msghdr.rtm_errno));
@@ -252,10 +252,14 @@ len = ROUNDUP(u.sa.sa_len); bcopy((char *)&(u), cp, len); cp += len;\
 			}
 
 			if (s_dest && msg.msghdr.rtm_flags & RTF_UP) {
+#if defined(__FreeBSD__)
+				*dst = ((struct sockaddr_in *)s_dest)->sin_addr.s_addr;
+#else
 				if (msg.msghdr.rtm_flags & RTF_WASCLONED)
 					*dst = 0;
 				else
 					*dst = ((struct sockaddr_in *)s_dest)->sin_addr.s_addr;
+#endif
 			}
 
 			if (mask) {
