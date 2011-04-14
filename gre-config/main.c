@@ -35,7 +35,7 @@
 
 #if defined(__linux__)
 #include <fcntl.h>			//open()...
-#include <linux/if_tunnel.h>	//SIOCADDTUNNEL, SIOCGETTUNNEL, SIOCDELTUNNEL
+#include <linux/if_tunnel.h>	//SIOCADDTUNNEL...
 #endif
 
 #include <errno.h>
@@ -70,18 +70,16 @@ int	load_gre_module();
 int find_unused_if(char ifname[]);
 int find_if_with_addr(char ifname[], in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote);
 
-int set_if_addr_tunnel(char ifname[], in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote, in_addr_t mask);
+int set_gre_tunnel(const char *ifname, in_addr_t src, in_addr_t dst);
+int set_gre_addrs(const char *ifname, in_addr_t local, in_addr_t remote);
+
 int delete_if_addr_tunnel(char ifname[]);
 
-int add_gre_if(in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote, in_addr_t mask);
-int remove_gre_if(in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote);
+//int add_gre_if(in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote, in_addr_t mask);
+//int remove_gre_if(in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote);
 
 #if defined(__linux__)
-static int linux_gre_yixun_clonecreate();
-#endif
-
-#if defined(__FreeBSD__)
-static int bsd_gre_if_clonecreate(char name[]);
+static void init_tunnel_parm(struct ip_tunnel_parm *p, const char *name);
 #endif
 
 
@@ -108,13 +106,32 @@ main(int argc, char *const argv[])
 	parse_args(argc, argv);	//处理参数
 
 	if (!flag_revert) {
+		/*
+		 *  load needed module
+		 *  On OSX, that is /Library/Extensions/GRE.kext, by SummerTown
+		 *  On FreeBSD, that is if_gre.ko
+		 *  On linux, it would be ip_gre.*
+		 */
+		if (load_gre_module() < 0)
+			return -1;
+
 		char ifname[IFNAMSIZ];
+		if (find_if_with_addr(ifname, src, dst, local, remote) == 0) {
+			fprintf(stderr, "tunnel already exists\n");
+			return 0;
+		}
+
 		if (find_unused_if(ifname) < 0) {
 			fprintf(stderr, "unable to find unused gre interface.\n");
 			return -1;
 		}
 
-		if (set_if_addr_tunnel(ifname, src, dst, local, remote, netmask) < 0) {
+		if (set_gre_tunnel(ifname, src, dst) < 0) {
+			fprintf(stderr, "error set tunnel address of %s\n", ifname);
+			return -1;
+		}
+
+		if (set_gre_addrs(ifname, local, remote) < 0) {
 			fprintf(stderr, "error set address of %s\n", ifname);
 			return -1;
 		}
@@ -153,8 +170,16 @@ main(int argc, char *const argv[])
 			 */
 		}
 	} else {
-		if (remove_gre_if(src, dst, local, remote) < 0)
+		char ifname[IFNAMSIZ];
+		if (find_if_with_addr(ifname, src, dst, local, remote) < 0) {
+			fprintf(stderr, "find_if_with_addr(): unable to find gre interface.\n");
 			return -1;
+		}
+
+		if (delete_if_addr_tunnel(ifname) < 0) {
+			fprintf(stderr, "delete_if_addr_tunnel(): unable to delete address of %s\n", ifname);
+			return -1;
+		}
 
 		if (flag_changeroute) {
 			if (gateway)
@@ -324,27 +349,11 @@ usage:
 	exit(-1);
 }
 
-/*
-void usage()
-{
-    fprintf(stderr,"Usage: %s {options}\n",progname);
-	fputs("  options:\n",stderr);
-	fputs("\t-l <local address>\tset address of local host\n", stderr);
-	fputs("\t-r <remote address>\tset address of remote host(p-p)\n", stderr);
-	fputs("\t-s <src address>\tset address of tunnel src\n", stderr);
-	fputs("\t-d <dst address>\tset address of tunnel dstination\n", stderr);
-	fputs("\t-n <netmask>\t\tset interface netmask\n",stderr);
-	fputs("\t-C <route>\t\tchange default route\n",stderr);
-	fputs("\t-c\t\t\ttun on tunnel checksum\n",stderr);
-	fputs("\t-v\t\t\trevert \n",stderr);
-}
- */
-
 int
 load_gre_module()
 {
 #if defined(__APPLE__)
-	printf("OSX, kextload GRE.kext\n");
+	fprintf(stderr, "OSX, kextload GRE.kext\n");
 	int pid;
 	if ((pid = fork()) < 0)
 		return -1;
@@ -362,9 +371,10 @@ load_gre_module()
 	return 0;
 #else
 #if defined(__FreeBSD__)
-	printf("FreeBSD, kldload if_gre\n");
 	if (modfind("if_gre") < 0) {
-		printf("load if_gre...\n");
+#ifdef DEBUG
+		fprintf(stderr, "FreeBSD, kldload if_gre\n");
+#endif
 		if (kldload("if_gre") < 0) {
 			perror("can't load if_gre");
 			return -1;
@@ -373,7 +383,7 @@ load_gre_module()
 	return 0;
 #else
 #if defined(__linux__)
-	printf("Linux, insmod ip_gre\n");
+	fprintf(stderr, "Linux, insmod ip_gre\n");
 	int fd;
 	char buff[128];
 	if ((fd = open("/proc/modules", O_RDONLY)) >= 0) {
@@ -386,12 +396,13 @@ load_gre_module()
 		}
 		close(fd);
 		/* module ip_gre not found, try to load ip_gre */
-		printf("load ip_gre...\n");
+		fprintf(stderr, "load ip_gre...\n");
 		int pid;
 		if ((pid = fork()) < 0)
 			return -1;
 
 		if (pid == 0) {
+			execle("/sbin/modprobe", "modprobe", "ip_gre", NULL, NULL);
 			execle("/sbin/insmod", "insmod", "ip_gre", NULL, NULL);
 			exit(1);
 		}
@@ -405,7 +416,7 @@ load_gre_module()
 	}
 	return -1;
 #else
-	fprintf(stderr, "%s: OS not supported\n", __FUNCTION__);
+	fprintf(stderr, "%s: Your OS is not supported yet\n", __FUNCTION__);
 	return -1;
 #endif
 #endif
@@ -416,147 +427,174 @@ load_gre_module()
 int
 find_unused_if(char ifname[])
 {
-	int sock;
-	struct ifreq ifrq;
+	int fd;
+	struct ifreq ifr;
 
-	if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+	if ((fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
 		perror("find_unused_if: socket");
 		return -1;
 	}
 
 #if defined(__linux__)
-	bzero(&ifrq, sizeof(ifrq));
-	sprintf(ifrq.ifr_name, GRENAME);
-	if (ioctl(sock, SIOCGIFFLAGS, &ifrq) < 0) {
-		if (linux_gre_yixun_clonecreate() < 0) {
-			fprintf(stderr, "%s ioctl(\"%s\"):%s\n", __FUNCTION__, GRENAME, strerror(errno));
-			close(sock);
-			return -1;
-		}
+	/*
+	 * hack: On linux, there will allways be a gre0 interface available
+	 * if ip_gre.* is loaded into kernel.
+	 * And, if you create a tunnel without local or remote parameter, 
+	 * ioctl(fd, SIOCADDTUNNEL, &ifr) will not return a error, but
+	 * you will NOT get the requied tunnel interface
+	 * So, we only check if gre0 exist
+	 */
+	bzero(&ifr, sizeof(ifr));
+	strncpy(ifr.ifr_name, "gre0", IFNAMSIZ);
+	if (ioctl(fd, SIOCGIFFLAGS, &ifr) < 0) {
+		fprintf(stderr, "%s ioctl(gre0):%s\n", __FUNCTION__, strerror(errno));
+		goto ERROR;
 	}
+	strncpy(ifname, GRENAME, IFNAMSIZ);
 
-	close(sock);
-	strcpy(ifname, GRENAME);
-	return 0;
 #else
 	int i;
 	for (i = 0; i < MAX_GREIF_CNT; i++) {
-		bzero(&ifrq, sizeof(ifrq));
-		sprintf(ifrq.ifr_name, "gre%d", i);
-		if (ioctl(sock, SIOCGIFFLAGS, &ifrq) < 0)
+		bzero(&ifr, sizeof(ifr));
+		sprintf(ifr.ifr_name, "gre%d", i);
+		if (ioctl(fd, SIOCGIFFLAGS, &ifr) < 0)
 			continue;
-		if ((ifrq.ifr_flags & IFF_RUNNING) == 0) {
-			strcpy(ifname, ifrq.ifr_name);
+		if ((ifr.ifr_flags & IFF_UP) == 0) {
+			strcpy(ifname, ifr.ifr_name);
 			break;
 		}
 	}
 
-	close(sock);
-
 #if defined(__FreeBSD__)
+	if (i >= MAX_GREIF_CNT) {
+		i = 0;
+		bzero(&ifr, sizeof(ifr));
+		strncpy(ifr.ifr_name, "gre", IFNAMSIZ);
+		if (ioctl(fd, SIOCIFCREATE2, &ifr) < 0) {
+			fprintf(stderr, "%s ioctl(SIOCIFCREATE2):%s\n", __FUNCTION__, strerror(errno));
+			goto ERROR;
+		}
+
+		if (strncmp("gre", ifr.ifr_name, sizeof(ifr.ifr_name)) != 0)
+			strncpy(ifname, ifr.ifr_name, IFNAMSIZ);
+		else
+			goto ERROR;
+	}
+#endif
 	if (i >= MAX_GREIF_CNT)
-		if (bsd_gre_if_clonecreate(ifname) < 0)
-			return -1;
+		goto ERROR;
 #endif
 
-	return i < MAX_GREIF_CNT ? 0 : -1;
-#endif
+	close(fd);
+	return 0;
+ERROR:
+	close(fd);
+	return -1;
 }
 
 int
 find_if_with_addr(char ifname[], in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote)
 {
 	int i;
-	int sock;
-	struct ifreq ifrq;
+	int fd;
+	struct ifreq ifr;
 
-	if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+	if ((fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
 		perror("find_unused_if: socket");
 		return -1;
 	}
+#if defined(__linux__)
+	struct ip_tunnel_parm p;
+	i = MAX_GREIF_CNT;
+	bzero(&ifr, sizeof(ifr));
+	strncpy(ifr.ifr_name, GRENAME, IFNAMSIZ);
+	init_tunnel_parm(&p, GRENAME);
+	ifr.ifr_ifru.ifru_data = (void *)&p;
 
+	if (ioctl(fd, SIOCGETTUNNEL, &ifr) < 0)
+		goto ERROR;
+	if (p.iph.protocol != IPPROTO_GRE)
+		goto ERROR;
+	if (p.iph.daddr != dst || p.iph.saddr != src)
+		goto ERROR;
+	/* get if local address */
+	if (ioctl(fd, SIOCGIFADDR, &ifr) < 0)
+		goto ERROR;
+	if (((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr.s_addr != local)
+		goto ERROR;
+
+	/* get if p-p address */
+	if (ioctl(fd, SIOCGIFDSTADDR, &ifr) < 0)
+		goto ERROR;
+	if (((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr.s_addr != remote)
+		goto ERROR;
+
+	strcpy(ifname, ifr.ifr_name);
+	i = 0;
+
+ERROR:
+
+#else
 	for (i = 0; i < MAX_GREIF_CNT; i++) {
-		bzero(&ifrq, sizeof(ifrq));
-		sprintf(ifrq.ifr_name, "gre%d", i);
+		bzero(&ifr, sizeof(ifr));
+		sprintf(ifr.ifr_name, "gre%d", i);
 
-#if defined(__APPLE__) || defined(__FreeBSD__)
 		/* get tunnel src address */
-		if (ioctl(sock, SIOCGIFPSRCADDR, &ifrq) < 0)
+		if (ioctl(fd, SIOCGIFPSRCADDR, &ifr) < 0)
 			continue;
-		if (((struct sockaddr_in *)&ifrq.ifr_addr)->sin_addr.s_addr != src)
+		if (((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr.s_addr != src)
 			continue;
 
 		/* get tunnel dst address */
-		if (ioctl(sock, SIOCGIFPDSTADDR, &ifrq) < 0)
+		if (ioctl(fd, SIOCGIFPDSTADDR, &ifr) < 0)
 			continue;
-		if (((struct sockaddr_in *)&ifrq.ifr_addr)->sin_addr.s_addr != dst)
+		if (((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr.s_addr != dst)
 			continue;
-#else				// Linux
-		struct ip_tunnel_parm parm;
-		bzero(&parm, sizeof(struct ip_tunnel_parm));
-		ifrq.ifr_ifru.ifru_data = (void *)&parm;
-		if (ioctl(sock, SIOCGETTUNNEL, &ifrq) < 0)
-			continue;
-		if (parm.iph.protocol != IPPROTO_GRE)
-			continue;
-		if (parm.iph.daddr != dst || parm.iph.saddr != src)
-			continue;
-#endif
 
 		/* get if local address */
-		if (ioctl(sock, SIOCGIFADDR, &ifrq) < 0)
+		if (ioctl(fd, SIOCGIFADDR, &ifr) < 0)
 			continue;
-		if (((struct sockaddr_in *)&ifrq.ifr_addr)->sin_addr.s_addr != local)
+		if (((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr.s_addr != local)
 			continue;
 
 		/* get if p-p address */
-		if (ioctl(sock, SIOCGIFDSTADDR, &ifrq) < 0)
+		if (ioctl(fd, SIOCGIFDSTADDR, &ifr) < 0)
 			continue;
-		if (((struct sockaddr_in *)&ifrq.ifr_addr)->sin_addr.s_addr != remote)
+		if (((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr.s_addr != remote)
 			continue;
 
 		/* we have found one, and just find only one */
-		//printf("find one: %s\n", ifrq.ifr_name);
-		strcpy(ifname, ifrq.ifr_name);
+		//printf("find one: %s\n", ifr.ifr_name);
+		strcpy(ifname, ifr.ifr_name);
 		break;
 	}
+#endif
 
-	close(sock);
+	close(fd);
 	return i < MAX_GREIF_CNT ? 0 : -1;
 }
 
 int
-set_if_addr_tunnel(char ifname[], in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote, in_addr_t mask)
+set_gre_tunnel(const char *ifname, in_addr_t src, in_addr_t dst)
 {
-	int sock;
+	int fd;
 
-	if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-		perror("set_if_addr_tunnel: socket");
+	if ((fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+		fprintf(stderr, "%s: socket(): %s\n", __FUNCTION__, strerror(errno));
 		return -1;
 	}
 
-	struct ifreq ifrq;
-	bzero(&ifrq, sizeof(ifrq));
-	strncpy(ifrq.ifr_name, ifname, IFNAMSIZ);
+	struct ifreq ifr;
+	bzero(&ifr, sizeof(ifr));
+	strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
 
 #if defined(__APPLE__) || defined(__FreeBSD__)
-	if (ioctl(sock, SIOCDIFPHYADDR, &ifrq) < 0) {
+	if (ioctl(fd, SIOCDIFPHYADDR, &ifr) < 0) {
 		if (errno != EADDRNOTAVAIL) {
-			perror("set_if_addr_tunnel: delete tunnel addr");
+			fprintf(stderr, "%s: ioctl(): %s\n", __FUNCTION__, strerror(errno));
 			goto ERROR;
 		}
 	}
-#endif
-
-	if (ioctl(sock, SIOCDIFADDR, &ifrq) < 0) {
-		if (errno != EADDRNOTAVAIL) {
-			perror("set_if_addr_tunnel: delete if addr");
-			goto ERROR;
-		}
-	}
-
-	/* set tunnel src and dst address */
-#if defined(__APPLE__) || defined(__FreeBSD__)
 	struct in_aliasreq in_req;
 	bzero(&in_req, sizeof(struct in_aliasreq));
 
@@ -569,20 +607,72 @@ set_if_addr_tunnel(char ifname[], in_addr_t src, in_addr_t dst, in_addr_t local,
 	in_req.ifra_dstaddr.sin_len = sizeof(struct sockaddr_in);
 	in_req.ifra_dstaddr.sin_addr.s_addr = dst;
 
-	if (ioctl(sock, SIOCSIFPHYADDR, &in_req) < 0) {
-		perror("set_if_addr_tunnel: set if tunnel address");
+	if (ioctl(fd, SIOCSIFPHYADDR, &in_req) < 0) {
+		fprintf(stderr, "%s: ioctl(): %s\n", __FUNCTION__, strerror(errno));
 		goto ERROR;
 	}
 #else
-	struct ip_tunnel_parm parm;
-	bzero(&parm, sizeof(struct ip_tunnel_parm));
-	parm.iph.protocol = IPPROTO_GRE;
-	parm.iph.daddr = dst;
-	parm.iph.saddr = src;
-	ifrq.ifr_ifru.ifru_data = (void *)&parm;
-	if (ioctl(sock, SIOCADDTUNNEL, &ifrq) < 0) {
-		perror("set_if_addr_tunnel: set if tunnel address");
-		goto ERROR;
+#if defined(__linux__)
+	struct ip_tunnel_parm p;
+	init_tunnel_parm(&p, ifname);
+	p.iph.daddr = dst;
+	p.iph.saddr = src;
+
+	bzero(&ifr, sizeof(ifr));
+	ifr.ifr_ifru.ifru_data = (void *)&p;
+
+	if (ioctl(fd, SIOCGIFFLAGS, &ifr) < 0) {
+		/* if interface not found, create it */
+		strncpy(ifr.ifr_name, "gre0", IFNAMSIZ);
+
+		if (ioctl(fd, SIOCADDTUNNEL, &ifr) < 0) {
+			fprintf(stderr, "%s: ioctl(): %s\n", __FUNCTION__, strerror(errno));
+			goto ERROR;
+		}
+	} else { 
+		strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
+		if (ioctl(fd, SIOCCHGTUNNEL, &ifr) < 0) {
+			fprintf(stderr, "%s: ioctl(): %s\n", __FUNCTION__, strerror(errno));
+			goto ERROR;
+		}
+	}
+
+#else
+	fprintf(stderr, "os not supported yet\n");
+	goto ERROR;
+#endif
+#endif
+	close(fd);
+	return 0;
+ERROR:
+	close(fd);
+	return -1;
+}
+
+int
+set_gre_addrs(const char *ifname, in_addr_t local, in_addr_t remote)
+{
+	int fd;
+
+	if ((fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+		perror("set_if_addr_tunnel: socket");
+		return -1;
+	}
+
+	struct ifreq ifr;
+	bzero(&ifr, sizeof(ifr));
+	strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
+
+	/* delete old address */
+	/* hack: On linux, add new ip address using ioctl(SIOCSIFADDR) will
+	 * actually delete the old one, and SIOCDIFADDR was not supported
+	 */
+#if defined(__APPLE__) || defined(__FreeBSD__)
+	if (ioctl(fd, SIOCDIFADDR, &ifr) < 0) {
+		if (errno != EADDRNOTAVAIL) {
+			fprintf(stderr, "%s: ioctl(): %s\n", __FUNCTION__, strerror(errno));
+			goto ERROR;
+		}
 	}
 #endif
 
@@ -592,214 +682,140 @@ set_if_addr_tunnel(char ifname[], in_addr_t src, in_addr_t dst, in_addr_t local,
 	sa.sin_family = AF_INET;
 
 	sa.sin_addr.s_addr = local;
-	bcopy(&sa, &ifrq.ifr_addr, sizeof(sa));
+	bcopy(&sa, &ifr.ifr_addr, sizeof(sa));
 #if defined(__APPLE__) || defined(__FreeBSD__)
-	((struct sockaddr_in *)&ifrq.ifr_addr)->sin_len = sizeof(struct sockaddr_in);
+	((struct sockaddr_in *)&ifr.ifr_addr)->sin_len = sizeof(struct sockaddr_in);
 #endif
-	if (ioctl(sock, SIOCSIFADDR, &ifrq) < 0) {
-		perror("set_if_addr_tunnel: set if local address");
+	if (ioctl(fd, SIOCSIFADDR, &ifr) < 0) {
+		fprintf(stderr, "%s: ioctl(): %s\n", __FUNCTION__, strerror(errno));
 		goto ERROR;
 	}
 
 	/* set if p-p address */
 	sa.sin_addr.s_addr = remote;
-	bcopy(&sa, &ifrq.ifr_addr, sizeof(sa));
+	bcopy(&sa, &ifr.ifr_addr, sizeof(sa));
 #if defined(__APPLE__) || defined(__FreeBSD__)
-	((struct sockaddr_in *)&ifrq.ifr_addr)->sin_len = sizeof(struct sockaddr_in);
+	((struct sockaddr_in *)&ifr.ifr_addr)->sin_len = sizeof(struct sockaddr_in);
 #endif
-	if (ioctl(sock, SIOCSIFDSTADDR, &ifrq) < 0) {
-		perror("set_if_addr_tunnel: set if remote address");
+	if (ioctl(fd, SIOCSIFDSTADDR, &ifr) < 0) {
+		fprintf(stderr, "%s: ioctl(): %s\n", __FUNCTION__, strerror(errno));
 		goto ERROR;
 	}
 
 	if (netmask != INADDR_ANY) {
 		/* set if netmask */
-		ifrq.ifr_addr.sa_family = AF_INET;
-		bcopy(&netmask, &((struct sockaddr_in *)&ifrq.ifr_addr)->sin_addr, sizeof(netmask));
+		ifr.ifr_addr.sa_family = AF_INET;
+		bcopy(&netmask, &((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr, sizeof(netmask));
 #if defined(__APPLE__) || defined(__FreeBSD__)
-		((struct sockaddr_in *)&ifrq.ifr_addr)->sin_len = sizeof(netmask);
+		((struct sockaddr_in *)&ifr.ifr_addr)->sin_len = sizeof(netmask);
 #endif
-		if (ioctl(sock, SIOCSIFNETMASK, &ifrq) < 0) {
-			perror("set_if_addr_tunnel: set netmask");
+		if (ioctl(fd, SIOCSIFNETMASK, &ifr) < 0) {
+			fprintf(stderr, "%s: ioctl(): %s\n", __FUNCTION__, strerror(errno));
 			goto ERROR;
 		}
 	}
 
 	/* let if up */
-	if (ioctl(sock, SIOCGIFFLAGS, &ifrq) < 0) {
-		perror("set_if_addr_tunnel: get if flags");
+	if (ioctl(fd, SIOCGIFFLAGS, &ifr) < 0) {
+		fprintf(stderr, "%s: ioctl(): %s\n", __FUNCTION__, strerror(errno));
 		goto ERROR;
 	}
-	if ((ifrq.ifr_flags & IFF_UP) == 0) {
-		ifrq.ifr_flags |= IFF_UP;
-		if (ioctl(sock, SIOCSIFFLAGS, &ifrq) < 0) {
-			perror("set_if_addr_tunnel: set if flags");
+	if ((ifr.ifr_flags & IFF_UP) == 0) {
+		ifr.ifr_flags |= IFF_UP;
+		if (ioctl(fd, SIOCSIFFLAGS, &ifr) < 0) {
+			fprintf(stderr, "%s: ioctl(): %s\n", __FUNCTION__, strerror(errno));
 			goto ERROR;
 		}
 	}
 
-	close(sock);
+	close(fd);
 	return 0;
+
 ERROR:
-	close(sock);
+	close(fd);
 	return -1;
 }
 
 int
 delete_if_addr_tunnel(char ifname[])
 {
-	int sock;
-	if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-		perror("delete_if_addr_tunnel: socket");
+	int fd;
+	if ((fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+		fprintf(stderr, "%s: socket(): %s\n", __FUNCTION__, strerror(errno));
 		return -1;
 	}
 
-	struct ifreq ifrq;
-	bzero(&ifrq, sizeof(ifrq));
-	strncpy(ifrq.ifr_name, ifname, IFNAMSIZ);
-	ifrq.ifr_addr.sa_family = AF_INET;
+	struct ifreq ifr;
+	bzero(&ifr, sizeof(ifr));
+	strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
+	ifr.ifr_addr.sa_family = AF_INET;
 
-	if (ioctl(sock, SIOCGIFFLAGS, &ifrq) < 0) {
-		perror("delete_if_addr_tunnel: get if flags");
+	if (ioctl(fd, SIOCGIFFLAGS, &ifr) < 0) {
+		fprintf(stderr, "%s: ioctl(): %s\n", __FUNCTION__, strerror(errno));
 		goto ERROR;
 	}
 
-	if (ifrq.ifr_flags & IFF_UP) {
-		ifrq.ifr_flags &= ~IFF_UP;
-		if (ioctl(sock, SIOCSIFFLAGS, &ifrq) < 0) {
-			perror("delete_if_addr_tunnel: set if flags");
+	if (ifr.ifr_flags & IFF_UP) {
+		ifr.ifr_flags &= ~IFF_UP;
+		if (ioctl(fd, SIOCSIFFLAGS, &ifr) < 0) {
+			fprintf(stderr, "%s: ioctl(): %s\n", __FUNCTION__, strerror(errno));
 			goto ERROR;
 		}
 	}
-#if defined(__APPLE__) || defined(__FreeBSD__)
-	bzero(&ifrq.ifr_addr, sizeof(struct sockaddr));
-	if (ioctl(sock, SIOCDIFPHYADDR, &ifrq) < 0) {
+
+#if defined(__linux__)
+	struct ip_tunnel_parm p;
+	init_tunnel_parm(&p, ifname);
+	ifr.ifr_ifru.ifru_data = (void *)&p;
+	if (ioctl(fd, SIOCDELTUNNEL, &ifr) < 0) {
 		if (errno != EADDRNOTAVAIL) {
-			perror("delete_if_addr_tunnel: delete tunnel addr");
+			fprintf(stderr, "%s: ioctl(): %s\n", __FUNCTION__, strerror(errno));
 			goto ERROR;
 		}
 	}
+
 #else
-	struct ip_tunnel_parm parm;
-	bzero(&parm, sizeof(struct ip_tunnel_parm));
-	parm.iph.protocol = IPPROTO_GRE;
-	ifrq.ifr_ifru.ifru_data = (void *)&parm;
-	if (ioctl(sock, SIOCDELTUNNEL, &ifrq) < 0) {
+	if (ioctl(fd, SIOCSIFDSTADDR, &ifr) < 0) {
 		if (errno != EADDRNOTAVAIL) {
-			perror("delete_if_addr_tunnel: delete tunnel addr");
+			fprintf(stderr, "%s: ioctl(): %s\n", __FUNCTION__, strerror(errno));
+			goto ERROR;
+		}
+	}
+
+	if (ioctl(fd, SIOCDIFADDR, &ifr) < 0) {
+		if (errno != EADDRNOTAVAIL) {
+			fprintf(stderr, "%s: ioctl(): %s\n", __FUNCTION__, strerror(errno));
+			goto ERROR;
+		}
+	}
+
+	bzero(&ifr.ifr_addr, sizeof(struct sockaddr));
+	if (ioctl(fd, SIOCDIFPHYADDR, &ifr) < 0) {
+		if (errno != EADDRNOTAVAIL) {
+			fprintf(stderr, "%s: ioctl(): %s\n", __FUNCTION__, strerror(errno));
 			goto ERROR;
 		}
 	}
 #endif
 
-	if (ioctl(sock, SIOCSIFDSTADDR, &ifrq) < 0) {
-		if (errno != EADDRNOTAVAIL) {
-			perror("delete_if_addr_tunnel: delete if remote address");
-			goto ERROR;
-		}
-	}
-
-	if (ioctl(sock, SIOCDIFADDR, &ifrq) < 0) {
-		if (errno != EADDRNOTAVAIL) {
-			perror("delete_if_addr_tunnel: delete local address");
-			goto ERROR;
-		}
-	}
-
-	close(sock);
+	close(fd);
 	return 0;
 ERROR:
-	close(sock);
+	close(fd);
 	return -1;
 }
 
 #if defined(__linux__)
-static int
-linux_gre_yixun_clonecreate()
+static void
+init_tunnel_parm(struct ip_tunnel_parm *p, const char *name)
 {
-	return -1;
+	bzero(p, sizeof(*p));
+	strncpy(p->name, name, IFNAMSIZ);
+	p->iph.version = 4;
+	p->iph.ihl = 5;
+	p->iph.frag_off = htons(IP_DF);
+	p->iph.protocol = IPPROTO_GRE;
+	p->iph.ttl = 30;
 }
 #endif
 
-#if defined(__FreeBSD__)
-static int
-bsd_gre_if_clonecreate(char name[])
-{
-	int sock;
-	struct ifreq ifr;
-
-	if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-		perror("bsd_gre_if_clonecreate: socket");
-		return -1;
-	}
-
-	bzero(&ifr, sizeof(ifr));
-	(void)strlcpy(ifr.ifr_name, "gre", sizeof(ifr.ifr_name));
-	if (ioctl(sock, SIOCIFCREATE2, &ifr) < 0) {
-		perror("SIOCIFCREATE2");
-		goto ERROR;
-	}
-
-	if (strncmp("gre", ifr.ifr_name, sizeof(ifr.ifr_name)) != 0) {
-		strlcpy(name, ifr.ifr_name, sizeof(ifr.ifr_name));
-#ifdef DEBUG
-		printf("%s\n", name);
-#endif
-		close(sock);
-		return 0;
-	}
-
-ERROR:
-	close(sock);
-	return -1;
-}
-#endif
-
-int
-add_gre_if(in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote, in_addr_t mask)
-{
-	if (load_gre_module() < 0)
-		return -1;
-	char ifname[IFNAMSIZ];
-	if (find_unused_if(ifname) < 0) {
-		fprintf(stderr, "%s: unable to find unused gre interface.\n", __FUNCTION__);
-		return -1;
-	}
-
-	if (set_if_addr_tunnel(ifname, src, dst, local, remote, mask) < 0) {
-		fprintf(stderr, "%s: error set address of %s\n", __FUNCTION__, ifname);
-		return -1;
-	}
-
-	return 0;
-}
-
-
-int
-remove_gre_if(in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote)
-{
-	char ifname[IFNAMSIZ];
-	if (find_if_with_addr(ifname, src, dst, local, remote) < 0) {
-		fprintf(stderr, "remove_gre_if: unable to find gre interface.\n");
-		return -1;
-	}
-
-	if (delete_if_addr_tunnel(ifname) < 0) {
-		fprintf(stderr, "remove_gre_if: unable to delete address of %s\n", ifname);
-		return -1;
-	}
-
-	return 0;
-}
-
-
-/*
-static void free_rt_list(struct rt_list *list)
-{
-    struct rt_list *p;
-    while (list) {
-        p = list->next;
-        free(list);
-        list = p;
-    }
-} */
