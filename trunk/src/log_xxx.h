@@ -10,14 +10,17 @@
 #ifndef _LOG_XXX_H
 #define _LOG_XXX_H
 
+#ifndef LNONE
+#define LNONE 0
+#endif
 #ifndef LCONSOLE
-#define LCONSOLE 0
+#define LCONSOLE 0x01
 #endif
 #ifndef LDAEMON
-#define LDAEMON 1
+#define LDAEMON 0x02
 #endif
 #ifndef LBUFF
-#define LBUFF 2
+#define LBUFF 0x04
 #endif
 
 #ifdef YIXUN_MULTI_THREAD

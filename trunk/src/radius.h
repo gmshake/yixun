@@ -12,7 +12,7 @@
 #include <net/ethernet.h>	//ETHER_ADDR_LEN
 #include "yixun_config.h"
 
-struct yixun_msg {
+struct mcb {
 	/* in parameters */
 	const char *username;
 	const char *password;
@@ -31,23 +31,24 @@ struct yixun_msg {
 	uint32_t download_band;
 
 	/* internal use */
+	unsigned int select_timeout;
 	int last_op;
 	int pre_config_done;
 	in_addr_t auth_server;
-	uint32_t auth_server_maskbits;
 	in_addr_t msg_server;
+	uint32_t auth_server_maskbits;
 	uint8_t eth_addr[ETHER_ADDR_LEN];
 	size_t s_buff_len;
 	char s_buff[S_BUF_LEN];
 	char server_info[SEGMENT_MAX_LEN + (SEGMENT_MAX_LEN >> 1)];
 };
 
-int login(struct yixun_msg *msg);
-int logout(struct yixun_msg *msg);
-int keep_alive(struct yixun_msg *msg);
+int login(struct mcb *mcb);
+int logout(struct mcb *mcb);
+int keep_alive(struct mcb *mcb);
 
 extern int start_listen();
 extern int stop_listen();
-extern int accept_client(struct yixun_msg *msg);
+extern int wait_msg(struct mcb *mcb);
 
 #endif				// _RADIUS_H

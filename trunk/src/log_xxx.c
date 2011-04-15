@@ -51,20 +51,24 @@ log_log(const char *fmt, ...)
 	va_list ap;
 	va_start(ap, fmt);
 
-	switch (log_type) {
-		case LDAEMON:
-			vsyslog(LOG_NOTICE, fmt, ap);
-			break;
-		case LCONSOLE:
-			cnt = vfprintf(stdout, fmt, ap);
-			break;
+	int i = 1;
+	while (i <= LBUFF) {
+		switch (log_type & i) {
+			case LCONSOLE:
+				cnt = vfprintf(stdout, fmt, ap);
+				break;
+			case LDAEMON:
+				vsyslog(LOG_NOTICE, fmt, ap);
+				break;
 #if USE_PTHREAD
-		case LBUFF:
-			cnt = vlogf(fmt, ap);
-			break;
+			case LBUFF:
+				cnt = vlogf(fmt, ap);
+				break;
 #endif
-		default:
-			break;
+			default:
+				break;
+		}
+		i <<= 1;
 	}
 
 	va_end(ap);
@@ -79,7 +83,7 @@ log_perror(const char *fmt, ...)
 	va_start(ap, fmt);
 
 	char buff[INFO_BUF_LEN];
-	cnt = my_strcpy(buff, "Error:", sizeof(buff));
+	cnt = my_strcpy(buff, "Error: ", sizeof(buff));
 	if (cnt < sizeof(buff))
 		cnt += vsnprintf(buff + cnt, sizeof(buff) - cnt, fmt, ap);
 	if (cnt < sizeof(buff))
@@ -87,21 +91,25 @@ log_perror(const char *fmt, ...)
 
 	va_end(ap);
 
-	switch (log_type) {
-		case LDAEMON:
-			syslog(LOG_ERR, buff);
-			break;
-		case LCONSOLE:
-			cnt = fprintf(stdout, "%s\n", buff);
-			break;
-#if USE_PTHREAD
-		case LBUFF:
-			cnt += snprintf(buff + cnt, sizeof(buff) - cnt, "\n");
-			append_msg(buff);
-			break;
+	int i = 1;
+	while (i <= LBUFF) {
+		switch (log_type & i) {
+			case LCONSOLE:
+				cnt = fprintf(stdout, "%s\n", buff);
+				break;
+			case LDAEMON:
+				syslog(LOG_ERR, buff);
+				break;
+			#if USE_PTHREAD
+			case LBUFF:
+				cnt += snprintf(buff + cnt, sizeof(buff) - cnt, "\n");
+				append_msg(buff);
+				break;
 #endif
-		default:
-			break;
+			default:
+				break;
+		}
+		i <<= 1;
 	}
 
 	return cnt;
@@ -116,23 +124,27 @@ vlog_xxx(const char *prepend, int log_level, const char *fmt, va_list ap)
 	if (cnt < sizeof(newfmt))
 		cnt += my_strcpy(newfmt + cnt, fmt, sizeof(newfmt) - cnt);
 
-	switch (log_type) {
-		case LDAEMON:
-			vsyslog(log_level, newfmt, ap);
-			break;
-		case LCONSOLE:
-			cnt = vfprintf(stdout, newfmt, ap);
-			break;
-#if USE_PTHREAD
-		case LBUFF:
-			cnt = vlogf(newfmt, ap);
-			break;
+	int i = 1;
+	while (i <= LBUFF) {
+		switch (log_type & i) {
+			case LCONSOLE:
+				cnt = vfprintf(stdout, newfmt, ap);
+				break;
+			case LDAEMON:
+				vsyslog(log_level, newfmt, ap);
+				break;
+			#if USE_PTHREAD
+			case LBUFF:
+				cnt = vlogf(newfmt, ap);
+				break;
 #endif
-		default:
+			default:
 #ifdef DEBUG
-			fprintf(stderr, "unsupported log_type\n");
+				fprintf(stderr, "unsupported log_type %x\n", log_type);
 #endif
-			break;
+				break;
+		}
+		i <<= 1;
 	}
 
 	return cnt;
@@ -143,7 +155,7 @@ log_critical(const char *fmt, ...)
 {
 	va_list ap;
 	va_start(ap, fmt);
-	int ret = vlog_xxx("Critical:", LOG_CRIT, fmt, ap);
+	int ret = vlog_xxx("Critical: ", LOG_CRIT, fmt, ap);
 	va_end(ap);
 	return ret;
 }
@@ -153,7 +165,7 @@ log_err(const char *fmt, ...)
 {
 	va_list ap;
 	va_start(ap, fmt);
-	int ret = vlog_xxx("Error:", LOG_ERR, fmt, ap);
+	int ret = vlog_xxx("Error: ", LOG_ERR, fmt, ap);
 	va_end(ap);
 	return ret;
 }
@@ -163,7 +175,7 @@ log_warning(const char *fmt, ...)
 {
 	va_list ap;
 	va_start(ap, fmt);
-	int ret = vlog_xxx("Warning:", LOG_WARNING, fmt, ap);
+	int ret = vlog_xxx("Warning: ", LOG_WARNING, fmt, ap);
 	va_end(ap);
 	return ret;
 }
@@ -173,7 +185,7 @@ log_notice(const char *fmt, ...)
 {
 	va_list ap;
 	va_start(ap, fmt);
-	int ret = vlog_xxx("Notice:", LOG_NOTICE, fmt, ap);
+	int ret = vlog_xxx("Notice: ", LOG_NOTICE, fmt, ap);
 	va_end(ap);
 	return ret;
 }
@@ -187,7 +199,7 @@ log_info(const char *fmt, ...)
 	 * LOG_INFO wouldn't log on Leopard
 	 * due to the setting in /etc/syslog.conf
 	 */
-	int ret = vlog_xxx("Info:", LOG_NOTICE, fmt, ap);
+	int ret = vlog_xxx("Info: ", LOG_NOTICE, fmt, ap);
 	va_end(ap);
 	return ret;
 }
@@ -197,7 +209,7 @@ log_debug(const char *fmt, ...)
 {
 	va_list ap;
 	va_start(ap, fmt);
-	int ret = vlog_xxx("Debug:", LOG_DEBUG, fmt, ap);
+	int ret = vlog_xxx("Debug: ", LOG_DEBUG, fmt, ap);
 	va_end(ap);
 	return ret;
 }
@@ -214,20 +226,24 @@ log_hex(const void *data, size_t len)
 	}
 	int rval = hex_to_ascii(buff, bufflen, data, len);
 
-	switch (log_type) {
-		case LDAEMON:
-			syslog(LOG_DEBUG, buff);
-			break;
-		case LCONSOLE:
-			fprintf(stderr, "%s\n", buff);
-			break;
+	int i = 1;
+	while (i < LBUFF) {
+		switch (log_type & i) {
+			case LCONSOLE:
+				fprintf(stderr, "%s\n", buff);
+				break;
+			case LDAEMON:
+				syslog(LOG_DEBUG, buff);
+				break;
 #if USE_PTHREAD
-		case LBUFF:
-			log_log("%s\n", buff);
-			break;
+			case LBUFF:
+				log_log("%s\n", buff);
+				break;
 #endif
-		default:
-			break;
+			default:
+				break;
+		}
+		i <<= 1;
 	}
 
 	return rval;

@@ -431,10 +431,11 @@ find_unused_if(char ifname[])
 	struct ifreq ifr;
 
 	if ((fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-		perror("find_unused_if: socket");
+		fprintf(stderr, "%s: socket(): %s\n", __FUNCTION__, strerror(errno));
 		return -1;
 	}
 
+	bzero(ifname, IFNAMSIZ);
 #if defined(__linux__)
 	/*
 	 * hack: On linux, there will allways be a gre0 interface available
@@ -453,91 +454,73 @@ find_unused_if(char ifname[])
 	strncpy(ifname, GRENAME, IFNAMSIZ);
 
 #else
-	int i;
-	for (i = 0; i < MAX_GREIF_CNT; i++) {
+	struct if_nameindex *p, *ifn = if_nameindex();
+	for (p = ifn; p->if_index && p->if_name; p++) {
+		if (strncmp(p->if_name, "gre", 3))
+			continue;
 		bzero(&ifr, sizeof(ifr));
-		sprintf(ifr.ifr_name, "gre%d", i);
+		strncpy(ifr.ifr_name, p->if_name, IFNAMSIZ);
 		if (ioctl(fd, SIOCGIFFLAGS, &ifr) < 0)
 			continue;
 		if ((ifr.ifr_flags & IFF_UP) == 0) {
-			strcpy(ifname, ifr.ifr_name);
+			strncpy(ifname, ifr.ifr_name, IFNAMSIZ);
 			break;
 		}
 	}
+	if_freenameindex(ifn);
 
 #if defined(__FreeBSD__)
-	if (i >= MAX_GREIF_CNT) {
-		i = 0;
+	if (ifname[0] == '\0') {
 		bzero(&ifr, sizeof(ifr));
 		strncpy(ifr.ifr_name, "gre", IFNAMSIZ);
-		if (ioctl(fd, SIOCIFCREATE2, &ifr) < 0) {
-			fprintf(stderr, "%s ioctl(SIOCIFCREATE2):%s\n", __FUNCTION__, strerror(errno));
-			goto ERROR;
-		}
-
-		if (strncmp("gre", ifr.ifr_name, sizeof(ifr.ifr_name)) != 0)
+		if (ioctl(fd, SIOCIFCREATE2, &ifr) < 0)
+			fprintf(stderr, "%s ioctl(SIOCIFCREATE2):%s\n", \
+					__FUNCTION__, strerror(errno));
+		else if (strncmp("gre", ifr.ifr_name, sizeof(ifr.ifr_name)) != 0)
 			strncpy(ifname, ifr.ifr_name, IFNAMSIZ);
-		else
-			goto ERROR;
 	}
 #endif
-	if (i >= MAX_GREIF_CNT)
-		goto ERROR;
 #endif
 
 	close(fd);
-	return 0;
-ERROR:
-	close(fd);
-	return -1;
+	return ifname[0] ? 0 : -1;
 }
 
 int
 find_if_with_addr(char ifname[], in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote)
 {
-	int i;
 	int fd;
 	struct ifreq ifr;
 
 	if ((fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-		perror("find_unused_if: socket");
+		fprintf(stderr, "%s: socket(): %s\n", __FUNCTION__, strerror(errno));
 		return -1;
 	}
+
+	bzero(ifname, IFNAMSIZ);
+
+	struct if_nameindex *p, *ifn = if_nameindex();
+	for (p = ifn; p->if_index && p->if_name; p++) {
 #if defined(__linux__)
-	struct ip_tunnel_parm p;
-	i = MAX_GREIF_CNT;
-	bzero(&ifr, sizeof(ifr));
-	strncpy(ifr.ifr_name, GRENAME, IFNAMSIZ);
-	init_tunnel_parm(&p, GRENAME);
-	ifr.ifr_ifru.ifru_data = (void *)&p;
-
-	if (ioctl(fd, SIOCGETTUNNEL, &ifr) < 0)
-		goto ERROR;
-	if (p.iph.protocol != IPPROTO_GRE)
-		goto ERROR;
-	if (p.iph.daddr != dst || p.iph.saddr != src)
-		goto ERROR;
-	/* get if local address */
-	if (ioctl(fd, SIOCGIFADDR, &ifr) < 0)
-		goto ERROR;
-	if (((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr.s_addr != local)
-		goto ERROR;
-
-	/* get if p-p address */
-	if (ioctl(fd, SIOCGIFDSTADDR, &ifr) < 0)
-		goto ERROR;
-	if (((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr.s_addr != remote)
-		goto ERROR;
-
-	strcpy(ifname, ifr.ifr_name);
-	i = 0;
-
-ERROR:
-
-#else
-	for (i = 0; i < MAX_GREIF_CNT; i++) {
+		/* linux version get tunnel src, dst addrs */
+		struct ip_tunnel_parm p;
 		bzero(&ifr, sizeof(ifr));
-		sprintf(ifr.ifr_name, "gre%d", i);
+		strncpy(ifr.ifr_name, p->if_name, IFNAMSIZ);
+		init_tunnel_parm(&p, p->if_name);
+		ifr.ifr_ifru.ifru_data = (void *)&p;
+
+		if (ioctl(fd, SIOCGETTUNNEL, &ifr) < 0)
+			continue;
+		if (p.iph.protocol != IPPROTO_GRE)
+			continue;
+		if (p.iph.daddr != dst || p.iph.saddr != src)
+			continue;
+#else
+		/* BSD/Darwin version, get tunnel src, dst addr */
+		if (strncmp(p->if_name, "gre", 3))
+			continue;
+		bzero(&ifr, sizeof(ifr));
+		strncpy(ifr.ifr_name, p->if_name, IFNAMSIZ);
 
 		/* get tunnel src address */
 		if (ioctl(fd, SIOCGIFPSRCADDR, &ifr) < 0)
@@ -550,7 +533,7 @@ ERROR:
 			continue;
 		if (((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr.s_addr != dst)
 			continue;
-
+#endif
 		/* get if local address */
 		if (ioctl(fd, SIOCGIFADDR, &ifr) < 0)
 			continue;
@@ -564,27 +547,26 @@ ERROR:
 			continue;
 
 		/* we have found one, and just find only one */
-		//printf("find one: %s\n", ifr.ifr_name);
-		strcpy(ifname, ifr.ifr_name);
+		strncpy(ifname, ifr.ifr_name, IFNAMSIZ);
 		break;
 	}
-#endif
+	if_freenameindex(ifn);
 
 	close(fd);
-	return i < MAX_GREIF_CNT ? 0 : -1;
+	return ifname[0] ? 0 : -1;
 }
 
 int
 set_gre_tunnel(const char *ifname, in_addr_t src, in_addr_t dst)
 {
 	int fd;
+	struct ifreq ifr;
 
 	if ((fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
 		fprintf(stderr, "%s: socket(): %s\n", __FUNCTION__, strerror(errno));
 		return -1;
 	}
 
-	struct ifreq ifr;
 	bzero(&ifr, sizeof(ifr));
 	strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
 

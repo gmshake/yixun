@@ -45,17 +45,17 @@
 static int sockListen;
 static int is_listening;
 
-void print_config(const struct yixun_msg *msg);
+void print_config(const struct mcb *mcb);
 
-static int pre_config(struct yixun_msg *msg);
-static int yixun_log_op(int op, struct yixun_msg *msg);
+static int pre_config(struct mcb *mcb);
+static int yixun_log_op(int op, struct mcb *mcb);
 
 
 /* 返回 0 表示无错， 返回正数，表示出错原因(e_user, e_pwd ....) */
-static int do_with_server_info(void *buff, struct yixun_msg *msg, int sockfd);
+static int act_on_info(void *buff, struct mcb *mcb, int sockfd);
 
 /* 认证通过后，获取接入服务器给的参数 */
-static int get_parameters(const void *buff, struct yixun_msg *msg);
+static int get_parameters(const void *buff, struct mcb *mcb);
 
 /* 生成一个发送包（包头） */
 static struct rds_packet_header *make_rds_packet(void *buff, enum rds_header_type type);
@@ -69,43 +69,44 @@ static int connect_tm(int socket, const struct sockaddr *addr, socklen_t addr_le
 
 /*
  * pre_config(), pre-config necessary infomation, check username, pwd etc.
- * @param msg, in/out
+ * @param mcb, in/out
  * return 0 on success, otherwise -1;
  */
 static int
-pre_config(struct yixun_msg *msg)
+pre_config(struct mcb *mcb)
 {
-	if (msg->username == NULL) {
+	if (mcb->username == NULL) {
 		log_err("[%s] Require username\n", __FUNCTION__);
 		return -1;
 	}
-	if (msg->clientip) {
-		msg->gre_src = inet_addr(msg->clientip);
-		if (msg->gre_src == 0 || msg->gre_src == 0xffffffff)
-			log_err("[%s] Invalid ip address:%s\n", __FUNCTION__, msg->clientip);
+	if (mcb->clientip) {
+		mcb->gre_src = inet_addr(mcb->clientip);
+		if (mcb->gre_src == 0 || mcb->gre_src == 0xffffffff)
+			log_err("[%s] Invalid ip address:%s\n", __FUNCTION__, mcb->clientip);
 	}
-	if (msg->mac) {
-		if (string_to_lladdr(msg->eth_addr, msg->mac) < 0)
-			log_err("[%s] Invalid lladdr:%s\n", __FUNCTION__, msg->mac);
+	if (mcb->mac) {
+		if (string_to_lladdr(mcb->eth_addr, mcb->mac) < 0)
+			log_err("[%s] Invalid lladdr:%s\n", __FUNCTION__, mcb->mac);
 	}
-	if (msg->serverip) {
+	if (mcb->serverip) {
 		char tmp[64];
-		strncpy(tmp, msg->serverip, sizeof(tmp));
+		strncpy(tmp, mcb->serverip, sizeof(tmp));
 		tmp[sizeof(tmp) - 1] = '\0';
 		char *args[2] = { NULL };
 		char *instr = tmp;
 		args[0] = strsep(&instr, "/");
 		args[1] = strsep(&instr, "/");
-		msg->auth_server = inet_addr(args[0]);
+		mcb->auth_server = inet_addr(args[0]);
 		if (args[1] != NULL) {
-			sscanf(args[1], "%u", &msg->auth_server_maskbits);
-			if (msg->auth_server_maskbits > 32)
-				msg->auth_server_maskbits = 32;
+			sscanf(args[1], "%u", &mcb->auth_server_maskbits);
+			if (mcb->auth_server_maskbits > 32)
+				mcb->auth_server_maskbits = 32;
 		}
 	} else {
-		msg->auth_server = inet_addr(AUTH_SERVER);
-		msg->auth_server_maskbits = AUTH_SERVER_MASKBITS;
+		mcb->auth_server = inet_addr(AUTH_SERVER);
+		mcb->auth_server_maskbits = AUTH_SERVER_MASKBITS;
 	}
+	mcb->select_timeout = 1;
 
 	return 0;
 }
@@ -113,7 +114,7 @@ pre_config(struct yixun_msg *msg)
 /*
  * yixun_log_op(), make && send proper packet indicated by op
  * @op, which type of packet
- * @param msg, in/out
+ * @param mcb, in/out
  * return 0 on success, otherwise none-zero;
  */
 
@@ -121,13 +122,13 @@ pre_config(struct yixun_msg *msg)
 #define LOGOUT 0x02
 #define KEEPALIVE 0x03
 static int
-yixun_log_op(int op, struct yixun_msg *msg)
+yixun_log_op(int op, struct mcb *mcb)
 {
 	int rval = 0;
-	if (!msg->pre_config_done) {
-		if (pre_config(msg) < 0)
+	if (!mcb->pre_config_done) {
+		if (pre_config(mcb) < 0)
 			return -1;
-		msg->pre_config_done = -1;
+		mcb->pre_config_done = -1;
 	}
 	int sockfd = socket(AF_INET, SOCK_STREAM, 0);
 	if (sockfd < 0) {
@@ -142,7 +143,7 @@ yixun_log_op(int op, struct yixun_msg *msg)
 	bzero(&auth_server, sizeof(struct sockaddr_in));
 	auth_server.sin_family = AF_INET;
 	auth_server.sin_port = htons(RADIUS_PORT);
-	auth_server.sin_addr.s_addr = msg->auth_server;
+	auth_server.sin_addr.s_addr = mcb->auth_server;
 
 	if (connect_tm(sockfd, (struct sockaddr *)&auth_server, sizeof(struct sockaddr_in), &tv) < 0) {
 		log_perror("connect to %s", inet_ntoa(auth_server.sin_addr));
@@ -152,51 +153,51 @@ yixun_log_op(int op, struct yixun_msg *msg)
 	/*
 	 * when op is same as the last op, then there is no\ need to re-make a same send packet
 	 */
-	if (op != msg->last_op) {
-		if (get_ip_mac_by_socket(sockfd, &msg->gre_local, msg->mac ? NULL : msg->eth_addr) < 0) {
+	if (op != mcb->last_op) {
+		if (get_ip_mac_by_socket(sockfd, &mcb->gre_local, mcb->mac ? NULL : mcb->eth_addr) < 0) {
 			log_err("[%s] get ip address and eth_addr\n", __FUNCTION__);
 			rval = -1;
 			goto ERROR;
 		}
-		if (msg->clientip == NULL || msg->gre_src == 0 || msg->gre_src == 0xffffffff)
-			msg->gre_src = msg->gre_local;
+		if (mcb->clientip == NULL || mcb->gre_src == 0 || mcb->gre_src == 0xffffffff)
+			mcb->gre_src = mcb->gre_local;
 
-		bzero(msg->s_buff, sizeof(msg->s_buff));
+		bzero(mcb->s_buff, sizeof(mcb->s_buff));
 		switch (op) {
 			case LOGIN:
 			{
 				uint8_t version[4] = { 0x03, 0x00, 0x00, 0x06 };	/* hack: sigh... */
 				uint8_t zeros[4] = { 0x00, 0x00, 0x00, 0x00 };
 
-				uint8_t *sec_pwd = (uint8_t *) malloc(sizeof(uint8_t) * (strlen(msg->password) + 2));
+				uint8_t *sec_pwd = (uint8_t *) malloc(sizeof(uint8_t) * (strlen(mcb->password) + 2));
 				if (sec_pwd == NULL) {
 					log_perror("[%s] malloc\n", __FUNCTION__);
 					rval = -1;
 					goto ERROR;
 				}
-				encode_pwd_with_ip(sec_pwd, msg->password, msg->gre_src);
+				encode_pwd_with_ip(sec_pwd, mcb->password, mcb->gre_src);
 
-				make_rds_packet(msg->s_buff, u_login);
-				add_segment(msg->s_buff, c_mac, 6, sizeof(msg->eth_addr), (char *)msg->eth_addr);
-				add_segment(msg->s_buff, c_ip, sizeof(in_addr_t), sizeof(in_addr_t), (char *)&msg->gre_src);
+				make_rds_packet(mcb->s_buff, u_login);
+				add_segment(mcb->s_buff, c_mac, 6, sizeof(mcb->eth_addr), (char *)mcb->eth_addr);
+				add_segment(mcb->s_buff, c_ip, sizeof(in_addr_t), sizeof(in_addr_t), (char *)&mcb->gre_src);
 				/* Hack:用户名有长度限制 */
-				add_segment(msg->s_buff, c_user, MAX_USER_NAME_LEN, strlen(msg->username), (char *)msg->username);
-				add_segment(msg->s_buff, c_pwd, strlen((char *)sec_pwd), strlen((char *)sec_pwd), (char *)sec_pwd);
-				add_segment(msg->s_buff, c_ver, 4, sizeof(version), (char *)version);
-				add_segment(msg->s_buff, c_pad, 4, sizeof(zeros), (char *)zeros);
+				add_segment(mcb->s_buff, c_user, MAX_USER_NAME_LEN, strlen(mcb->username), (char *)mcb->username);
+				add_segment(mcb->s_buff, c_pwd, strlen((char *)sec_pwd), strlen((char *)sec_pwd), (char *)sec_pwd);
+				add_segment(mcb->s_buff, c_ver, 4, sizeof(version), (char *)version);
+				add_segment(mcb->s_buff, c_pad, 4, sizeof(zeros), (char *)zeros);
 
 				free(sec_pwd);
 				break;
 			}
 			case LOGOUT:
 				/* Hack:退出登录和保持活动连接只有packet_type有差别 */
-				make_rds_packet(msg->s_buff, u_logout);
+				make_rds_packet(mcb->s_buff, u_logout);
 				goto LOGOUT_KEEPALIVE;
 			case KEEPALIVE:
-				make_rds_packet(msg->s_buff, u_keepalive);
+				make_rds_packet(mcb->s_buff, u_keepalive);
 LOGOUT_KEEPALIVE:
-				add_segment(msg->s_buff, c_ip, sizeof(in_addr_t), sizeof(in_addr_t), (char *)&msg->gre_src);
-				add_segment(msg->s_buff, c_user, MAX_USER_NAME_LEN, strlen(msg->username), (char *)msg->username);
+				add_segment(mcb->s_buff, c_ip, sizeof(in_addr_t), sizeof(in_addr_t), (char *)&mcb->gre_src);
+				add_segment(mcb->s_buff, c_user, MAX_USER_NAME_LEN, strlen(mcb->username), (char *)mcb->username);
 				break;
 			default:
 #ifdef DEBUG
@@ -205,8 +206,8 @@ LOGOUT_KEEPALIVE:
 				rval = -2;
 				goto ERROR;
 		}
-		msg->s_buff_len = RDS_PACKET_LEN(msg->s_buff);
-		msg->last_op = op;
+		mcb->s_buff_len = RDS_PACKET_LEN(mcb->s_buff);
+		mcb->last_op = op;
 	}
 	tv.tv_sec = SND_TIMEOUT;
 	tv.tv_usec = 0;
@@ -215,7 +216,7 @@ LOGOUT_KEEPALIVE:
 		rval = -3;
 		goto ERROR;
 	}
-	if (send(sockfd, msg->s_buff, msg->s_buff_len, 0) < 0) {
+	if (send(sockfd, mcb->s_buff, mcb->s_buff_len, 0) < 0) {
 		log_perror("[%s] send to %s", __FUNCTION__, inet_ntoa(auth_server.sin_addr));
 		rval = -1;
 		goto ERROR;
@@ -251,7 +252,7 @@ LOGOUT_KEEPALIVE:
 				rval = -1;
 				goto ERROR;
 			}
-			if ((rval = do_with_server_info(r_buff, msg, sockfd)) != 0)
+			if ((rval = act_on_info(r_buff, mcb, sockfd)) != 0)
 				goto ERROR;
 
 			break;
@@ -274,38 +275,38 @@ ERROR:
 
 /*
  * login(), send login packet
- * @param msg, in/out
+ * @param mcb, in/out
  * return 0 on success, otherwise -1;
  */
 int
-login(struct yixun_msg *msg)
+login(struct mcb *mcb)
 {
-	int rval = yixun_log_op(LOGIN, msg);
+	int rval = yixun_log_op(LOGIN, mcb);
 	if (rval == 0)
-		print_config(msg);
+		print_config(mcb);
 	return rval;
 }
 
 /*
  * logout(), send logout packet
- * @param msg, in
+ * @param mcb, in
  * return 0 on success, otherwise -1;
  */
 int
-logout(struct yixun_msg *msg)
+logout(struct mcb *mcb)
 {
-	return yixun_log_op(LOGOUT, msg);
+	return yixun_log_op(LOGOUT, mcb);
 }
 
 /*
  * keep_alive(), send keep alive packet
- * @param msg, in
+ * @param mcb, in
  * return 0 on success, otherwise -1;
  */
 int
-keep_alive(struct yixun_msg *msg)
+keep_alive(struct mcb *mcb)
 {
-	return yixun_log_op(KEEPALIVE, msg);
+	return yixun_log_op(KEEPALIVE, mcb);
 }
 
 /*
@@ -363,12 +364,12 @@ stop_listen()
 }
 
 /*
- * accept_client(), to receive server side infomation
- * @param msg, in
+ * wait_mcb(), to receive server side infomation
+ * @param mcb, in
  * return 0 on success, otherwise return none-zero
  */
 int
-accept_client(struct yixun_msg *msg)
+wait_msg(struct mcb *mcb)
 {
 	fd_set rfds;
 	struct timeval tv;
@@ -377,92 +378,98 @@ accept_client(struct yixun_msg *msg)
 	pthread_testcancel();
 #endif
 
-	tv.tv_sec = 1;
+	tv.tv_sec = mcb->select_timeout;
 	tv.tv_usec = 0;
 	FD_ZERO(&rfds);
 	FD_SET(sockListen, &rfds);
-	int cnt = select(sockListen + 1, &rfds, NULL, NULL, &tv);
-	if (cnt <= 0) {
-		if (cnt < 0 && errno != EINTR)
-			log_perror("[%s] select", __FUNCTION__);
-		return 0;
+
+	switch (select(sockListen + 1, &rfds, NULL, NULL, &tv)) {
+		case -1:
+			if (errno != EINTR)
+				log_perror("[%s] select", __FUNCTION__);
+			return 0;
+		case 0:
+			mcb->select_timeout++;
+			return 0;
+		default:
+			if (!FD_ISSET(sockListen, &rfds))
+				return 0;
+			break;
 	}
 #if USE_PTHREAD
 	pthread_testcancel();
 #endif
 
-	if (FD_ISSET(sockListen, &rfds)) {
-		BUFF_ALIGNED(r_buff, R_BUF_LEN);
-		struct sockaddr_in r_client;
-		socklen_t len = sizeof(r_client);
-		int sock_client = accept(sockListen, (struct sockaddr *)&r_client, &len);
-		if (sock_client < 0) {
-			log_perror("[%s] accept", __FUNCTION__);
-			return -1;
-		}
-		/* 当对方的IP地址不在接入服务器IP地址段时断开连接（防止攻击） */
-		if ((ntohl(r_client.sin_addr.s_addr) ^ ntohl(msg->auth_server)) >> (32 - msg->auth_server_maskbits) != 0) {
-			log_notice("[%s]: %s attempt to connect\n", __FUNCTION__, inet_ntoa(r_client.sin_addr));
-			close(sock_client);
-			return 0;
-		}
-		if (msg->msg_server == 0)
-			msg->msg_server = r_client.sin_addr.s_addr;
-
-		log_info("[%s] accept: %s\n", __FUNCTION__, inet_ntoa(r_client.sin_addr));
-
-		tv.tv_sec = 1;
-		tv.tv_usec = 0;
-		if (setsockopt(sock_client, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
-			log_perror("[%s] setsockopt", __FUNCTION__);
-
-		ssize_t ret = recv(sock_client, r_buff, R_BUF_LEN, 0);
-		if (ret <= 0) {
-			if (ret == 0) {
-				log_perror("[%s] recv: Client %s has closed its half side of the connection\n", __FUNCTION__, inet_ntoa(r_client.sin_addr));
-			} else {
-				if (errno == EAGAIN)
-					log_err("[%s] recv: time out\n", __FUNCTION__);
-				else
-					log_perror("[%s] recv", __FUNCTION__);
-			}
-			return -1;
-		}
-		if (do_with_server_info(r_buff, msg, 0) < 0)
-			close(sock_client);
+	BUFF_ALIGNED(r_buff, R_BUF_LEN);
+	struct sockaddr_in r_client;
+	socklen_t len = sizeof(r_client);
+	int sock_client = accept(sockListen, (struct sockaddr *)&r_client, &len);
+	if (sock_client < 0) {
+		log_perror("[%s] accept", __FUNCTION__);
+		return -1;
 	}
-	return 0;
+	/* 当对方的IP地址不在接入服务器IP地址段时断开连接（防止攻击） */
+	if ((ntohl(r_client.sin_addr.s_addr) ^ ntohl(mcb->auth_server)) >> (32 - mcb->auth_server_maskbits) != 0) {
+		log_notice("[%s]: %s attempt to connect\n", __FUNCTION__, inet_ntoa(r_client.sin_addr));
+		close(sock_client);
+		return 0;
+	}
+	if (mcb->msg_server == 0)
+		mcb->msg_server = r_client.sin_addr.s_addr;
+
+	log_info("[%s] accept: %s\n", __FUNCTION__, inet_ntoa(r_client.sin_addr));
+
+	tv.tv_sec = RCV_TIMEOUT;
+	tv.tv_usec = 0;
+	if (setsockopt(sock_client, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
+		log_perror("[%s] setsockopt", __FUNCTION__);
+
+	ssize_t ret = recv(sock_client, r_buff, R_BUF_LEN, 0);
+	if (ret > 0) {
+		if (act_on_info(r_buff, mcb, 0) < 0)
+			close(sock_client);
+		return 0;
+	}
+	if (ret == 0) {
+		log_perror("[%s] recv: Client %s has closed its half side of the connection\n", __FUNCTION__, inet_ntoa(r_client.sin_addr));
+	} else {
+		if (errno == EAGAIN)
+			log_err("[%s] recv: time out\n", __FUNCTION__);
+		else
+			log_perror("[%s] recv", __FUNCTION__);
+	}
+	return -1;
 }
 
 
 /*
  * print_config(), print configuration from returned by server
- * @msg,    in
+ * @mcb,    in
  */
 void
-print_config(const struct yixun_msg *msg)
+print_config(const struct mcb *mcb)
 {
-	log_notice("Tunnel src IP address:\t%s\n", inet_itoa(msg->gre_src));
-	log_notice("Tunnel dst IP address:\t%s\n", inet_itoa(msg->gre_dst));
-	log_notice("Local IP address:\t%s\n", inet_itoa(msg->gre_local));
-	log_notice("Remote IP address:\t%s\n",inet_itoa(msg->gre_remote));
-	log_notice("P-t-P Netmask:\t%s\n", inet_itoa(msg->gre_netmask));
-	log_notice("Upload band:\t%ukbps\n", msg->upload_band);
-	log_notice("Download band:\t%ukbps\n", msg->download_band);
+	log_notice("src IP address:    %s\n", inet_itoa(mcb->gre_src));
+	log_notice("dst IP address:    %s\n", inet_itoa(mcb->gre_dst));
+	log_notice("Local IP address:  %s\n", inet_itoa(mcb->gre_local));
+	log_notice("Remote IP address: %s\n",inet_itoa(mcb->gre_remote));
+	log_notice("P-t-P Netmask:     %s\n", inet_itoa(mcb->gre_netmask));
+	log_notice("Upload band:       %ukbps\n", mcb->upload_band);
+	log_notice("Download band:     %ukbps\n", mcb->download_band);
 #ifdef DEBUG
-	log_notice("Heart beat:\t%u\n", msg->timeout);
+	log_notice("Heart beat:\t%u\n", mcb->timeout);
 #endif
 }
 
 /*
- * do_with_server_info(), act on receiving server packet
+ * act_on_info(), act on receiving server packet
  * @param buff, server side packet
- * @msg,    out
+ * @mcb,    out
  * @sockfd, send yixun user ack from which
  * on success, return 0, otherwise return none-zero
  */
 static int
-do_with_server_info(void *buff, struct yixun_msg *msg, int sockfd)
+act_on_info(void *buff, struct mcb *mcb, int sockfd)
 {
 	/*
 	 * hack: due to problem caused by memory alignment, we sugguest that buff
@@ -496,27 +503,27 @@ do_with_server_info(void *buff, struct yixun_msg *msg, int sockfd)
 				stop_listen();
 				return -1;
 			}
-			accept_client(msg);
+			wait_msg(mcb);
 
-			if (get_parameters(buff, msg) < 0) {
+			if (get_parameters(buff, mcb) < 0) {
 				log_err("[%s] Cannot get parameters\n", __FUNCTION__);
 				stop_listen();
 				return -1;
 			}
-			if (msg->timeout > KEEP_ALIVE_TIMEOUT) {
-				log_notice("Server side timeout is too long:%u, use %u instead\n", msg->timeout, KEEP_ALIVE_TIMEOUT);
-				msg->timeout = KEEP_ALIVE_TIMEOUT;
+			if (mcb->timeout > KEEP_ALIVE_TIMEOUT) {
+				log_notice("Server side timeout is too long:%u, use %u instead\n", mcb->timeout, KEEP_ALIVE_TIMEOUT);
+				mcb->timeout = KEEP_ALIVE_TIMEOUT;
 			}
 			break;
 		}
 		case s_info:
-			get_parameters(buff, msg);
-			log_info(msg->server_info);
+			get_parameters(buff, mcb);
+			log_info(mcb->server_info);
 			break;
 		case s_error:
 		{
-			int rval = get_parameters(buff, msg);
-			log_err(msg->server_info);
+			int rval = get_parameters(buff, mcb);
+			log_err(mcb->server_info);
 			return rval ? rval : -1;
 		}
 		case s_keepalive:
@@ -532,11 +539,11 @@ do_with_server_info(void *buff, struct yixun_msg *msg, int sockfd)
 /*
  * get_parameters(), get infomation from server side packet
  * @param buff, server size packet
- * @msg,    out
+ * @mcb,    out
  * on success, return 0, otherwise return none-zero
  */
 static int
-get_parameters(const void *buff, struct yixun_msg *msg)
+get_parameters(const void *buff, struct mcb *mcb)
 {
 	/*
 	 * hack: due to problem caused by memory alignment, we sugguest that buff
@@ -571,20 +578,20 @@ get_parameters(const void *buff, struct yixun_msg *msg)
 #endif
 		switch (p->type) {
 			case s_gre_d:
-				msg->gre_dst = *((in_addr_t *) p->content);
+				mcb->gre_dst = *((in_addr_t *) p->content);
 				break;
 			case s_gre_l:
 				/*
 				 * hack: 这里服务器返回的IP地址是10.0.x.x 从GRE tunnel看来，这个是正确的，不过 实际上，如果使用10.0.x.x作为GRE tunnel local端IP的话，网络反而是不通的，原因是 陕西某某公司做的服务端并未添加 route 表 项到10.0.x.x(tunnel)，因此，从客户端 可以发包出去，却收不到回来的包，因此，这里 的参数忽略
 				 */
-				if (msg->gre_local == 0)
-					msg->gre_local = *((in_addr_t *) p->content);
+				if (mcb->gre_local == 0)
+					mcb->gre_local = *((in_addr_t *) p->content);
 				break;
 			case s_gre_r:
-				msg->gre_remote = *((in_addr_t *) p->content);
+				mcb->gre_remote = *((in_addr_t *) p->content);
 				break;
 			case s_timeout:
-				msg->timeout = ntohl(*((uint32_t *) p->content));
+				mcb->timeout = ntohl(*((uint32_t *) p->content));
 				break;
 			case s_rule:
 #ifdef DEBUG
@@ -592,31 +599,31 @@ get_parameters(const void *buff, struct yixun_msg *msg)
 #endif
 				break;
 			case s_mask:
-				msg->gre_netmask = *((in_addr_t *) p->content);
+				mcb->gre_netmask = *((in_addr_t *) p->content);
 				break;
 			case s_pad:
 				break;
 			case s_upband:
-				msg->upload_band = ntohl(*((uint32_t *) p->content));
+				mcb->upload_band = ntohl(*((uint32_t *) p->content));
 				break;
 			case s_downband:
-				msg->download_band = ntohl(*((uint32_t *) p->content));
+				mcb->download_band = ntohl(*((uint32_t *) p->content));
 				break;
 			case s_sinfo:
 			{
-				bzero(msg->server_info, sizeof(msg->server_info));
-				size_t len = p->length - sizeof(struct rds_segment) < sizeof(msg->server_info) ?
-				    p->length - sizeof(struct rds_segment) - 2 : sizeof(msg->server_info) - 2;
+				bzero(mcb->server_info, sizeof(mcb->server_info));
+				size_t len = p->length - sizeof(struct rds_segment) < sizeof(mcb->server_info) ?
+				    p->length - sizeof(struct rds_segment) - 2 : sizeof(mcb->server_info) - 2;
 
 				convert_code("GB18030", "UTF-8",
 							p->content, strlen(p->content),
-							msg->server_info, len);
+							mcb->server_info, len);
 
-				strcat(msg->server_info, "\n");
+				strcat(mcb->server_info, "\n");
 
 				const struct str_err *p = error_info;
 				while (p->info) {
-					if (strcasestr(msg->server_info, p->info) != NULL)
+					if (strcasestr(mcb->server_info, p->info) != NULL)
 						return p->error;
 					p++;
 				}
