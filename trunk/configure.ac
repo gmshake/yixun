@@ -20,7 +20,7 @@ AC_PROG_CXX
 AC_PROG_INSTALL
 AC_PROG_CPP
 AC_PROG_MKDIR_P
-#AC_PROG_RANLIB
+AC_PROG_RANLIB
 
 case $host_vendor in
 	*openwrt*)
@@ -79,6 +79,6 @@ AC_FUNC_VPRINTF
 AC_CHECK_FUNCS([alarm atexit bzero ftruncate inet_ntoa memset select socket stpcpy strchr strerror strstr])
 
 AC_CONFIG_FILES([Makefile
-                 gre-config/Makefile
+                 lib/Makefile
                  src/Makefile])
 AC_OUTPUT

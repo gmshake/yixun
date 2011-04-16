@@ -22,7 +22,7 @@
 
 #include <errno.h>
 
-#include "print_hex.h"
+#include "hexdump.h"
 
 //消息缓冲区大小 4KB
 #ifndef INFO_BUF_LEN
@@ -224,7 +224,7 @@ log_hex(const void *data, size_t len)
 		log_perror("[log_hex] malloc");
 		return -1;
 	}
-	int rval = hex_to_ascii(buff, bufflen, data, len);
+	int rval = hex2ascii(buff, bufflen, data, len);
 
 	int i = 1;
 	while (i < LBUFF) {

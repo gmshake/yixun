@@ -16,7 +16,7 @@
 #include <errno.h>
 
 #include "log_xxx.h"
-#include "print_hex.h"
+#include "hexdump.h"
 #include "common_macro.h"
 
 //消息缓冲区大小 4KB + 1

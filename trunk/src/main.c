@@ -22,16 +22,19 @@
 #include <syslog.h>		/* openlog() */
 
 #include <arpa/inet.h>		/* inet_addr() inet_ntoa */
+#include <net/if_var.h>
 
 #include "radius.h"
 #include "log_xxx.h"
 #include "common_macro.h"
-#include "../route/route_op.h"
+#include "route_op.h"
+#include "gre_module.h"
+#include "gre_tunnel.h"
 
 #ifdef YIXUN_PID
 #define LOCKFILE YIXUN_PID
 #else
-#define LOCKFILE "/var/tmp/yixun.pid"	/* 锁文件 */
+#define LOCKFILE "/var/tmp/yixun.pid"
 #endif
 
 static int lockfd;		/* lockfile file description */
@@ -65,9 +68,8 @@ int check_conf_file(const char *conf);
 int sanity_check(int fd);
 void process_signals(int sig);
 int quit_daemon(void);
-int set_gre_if_tunnel(void);
-int remove_gre_if_tunnel(void);
-//int lock_file(const char *lockfile);	/* On error, return -1; */
+int set_tunnel(in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote, in_addr_t netmask);
+int remove_tunnel(in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote);
 int open_pid_file(void);
 int write_pid(int fd);
 int close_pid_file(int fd);
@@ -149,9 +151,9 @@ main(int argc, char *const argv[])
 
 	/* Extended test done */
 	if (flag_etest)
-		return 0;
+		return EXIT_SUCCESS;
 
-	if (set_gre_if_tunnel() < 0) {
+	if (set_tunnel(mcb.gre_src, mcb.gre_dst, mcb.gre_local, mcb.gre_remote, mcb.gre_netmask) < 0) {
 		log_perror("Can not set gre interface");
 		return EXIT_FAILURE;
 	}
@@ -166,9 +168,9 @@ main(int argc, char *const argv[])
 	alarm(mcb.timeout);
 
 	/* if not extended test, loop forever */
-	do {
+	while(1) {
 		wait_msg(&mcb);
-	} while (!flag_etest);
+	}
 
 	return EXIT_SUCCESS;
 }
@@ -405,15 +407,97 @@ gre_if_op(int flag, struct mcb *mcb, int argc, char *const argv[])
 }
 
 int
-set_gre_if_tunnel(void)
+set_tunnel(in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote, in_addr_t netmask)
 {
-	return gre_if_op(flag_changeroute ? FLAG_SET | FLAG_CROUTE : FLAG_SET, &mcb, extr_argc, extr_argv);
+	//return gre_if_op(flag_changeroute ? FLAG_SET | FLAG_CROUTE : FLAG_SET, &mcb, extr_argc, extr_argv);
+
+	/*
+	 *  load needed module
+	 *  On OSX, that is /Library/Extensions/GRE.kext, by SummerTown
+	 *  On FreeBSD, that is if_gre.ko
+	 *  On linux, it would be ip_gre.*
+	 */
+	if (load_gre_module() < 0)
+		return -1;
+
+	char ifname[IFNAMSIZ];
+	if (gre_find_tunnel_with_addr(ifname, src, dst, local, remote) == 0) {
+		fprintf(stderr, "tunnel already exists\n");
+		return 0;
+	}
+
+	if (gre_find_unused_tunnel(ifname) < 0) {
+		fprintf(stderr, "unable to find unused gre interface.\n");
+		return -1;
+	}
+
+	if (gre_set_tunnel_addr(ifname, src, dst) < 0) {
+		fprintf(stderr, "error set tunnel address of %s\n", ifname);
+		return -1;
+	}
+
+	if (gre_set_if_addr(ifname, local, remote, netmask) < 0) {
+		fprintf(stderr, "error set address of %s\n", ifname);
+		return -1;
+	}
+
+	/*
+	 * hack: if tunnel remote is the same as tunnel interface dst, as we have no 
+	 * opportunity to access route directly(Apple has not addressed it to the developer)
+	 * , we delete the loopback route. 
+	 */
+	if (remote == dst) {
+		in_addr_t tmp_dst = remote;
+		in_addr_t tmp_mask = 0xffffffff;
+		if (route_get(&tmp_dst, &tmp_mask, NULL, NULL) == 0 && tmp_dst == remote && tmp_mask == 0xffffffff)
+			route_delete(remote, 0xffffffff);
+	}
+
+	if (flag_changeroute) {
+
+		route_change(0, 0, remote, ifname);
+		/*
+		   route_delete(0, 0);
+		   route_add(0, 0, remote, ifname);
+		   */
+	}
+
+
 }
 
 int
-remove_gre_if_tunnel(void)
+remove_tunnel(in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote)
 {
-	return gre_if_op(flag_changeroute ? FLAG_CROUTE : 0, &mcb, extr_argc, extr_argv);
+	//return gre_if_op(flag_changeroute ? FLAG_CROUTE : 0, &mcb, extr_argc, extr_argv);
+	
+	char ifname[IFNAMSIZ];
+	if (gre_find_tunnel_with_addr(ifname, src, dst, local, remote) < 0) {
+		fprintf(stderr, "find_if_with_addr(): unable to find gre interface.\n");
+		return -1;
+	}
+
+	if (gre_delete_if_tunnel_addr(ifname) < 0) {
+		fprintf(stderr, "delete_if_addr_tunnel(): unable to delete address of %s\n", ifname);
+		return -1;
+	}
+
+	if (flag_changeroute) {
+		/*
+		if (gateway)
+			route_add(0, 0, gateway, NULL);
+		else {
+			in_addr_t tmp_dst = dst;
+			in_addr_t tmp_mask = 0xffffffff;
+			in_addr_t tmp_gateway = 0;
+			if (route_get(&tmp_dst, &tmp_mask, &tmp_gateway, ifp) == 0)
+				route_add(0, 0, tmp_gateway, tmp_gateway ? NULL : ifp);
+			else
+				fprintf(stderr, "route_get: error get ori gateway\n");
+		}
+		*/
+	}
+
+	return 0;
 }
 
 int
@@ -421,29 +505,31 @@ quit_daemon(void)
 {
 	int fd = open(LOCKFILE, O_RDONLY);
 	if (fd < 0) {
-		log_perror("%s: open(%)s", __FUNCTION__, LOCKFILE);
+		log_perror("%s: open(%s)", __FUNCTION__, LOCKFILE);
 		return -1;
 	}
-	if (lockf(fd, F_TEST, 0) == 0) {
+	/* A running daemon won't let us succeed in locking fd exclusively */
+	if (flock(fd, LOCK_EX | LOCK_NB) == 0) {
 		log_err("%s: No daemons found\n", __FUNCTION__);
 		return 0;
 	}
 	char fbuff[32];
 	read(fd, fbuff, sizeof(fbuff) - 1);
+	close(fd);
+
 	fbuff[sizeof(fbuff) - 1] = '\0';
 	long pid;
 	sscanf(fbuff, "%ld", &pid);
-	close(fd);
 
 	if (kill(pid, SIGTERM) < 0) {
-		log_perror("%s: kill()", __FUNCTION__);
+		log_perror("%s: kill(%ld)", __FUNCTION__, pid);
 		return -1;
 	}
 	return 0;
 }
 
 int
-open_pid_file()
+open_pid_file(void)
 {
 	int fd = open(LOCKFILE, O_RDWR | O_CREAT, 0640);
 	if (fd < 0) {
@@ -471,6 +557,7 @@ write_pid(int fd)
 		log_perror("%s: write(%s)", __FUNCTION__, LOCKFILE);
 		return -2;
 	}
+	return 0;
 }
 
 int
@@ -587,7 +674,7 @@ cleanup(void)
 	if (flag_daemon)
 		close_pid_file(lockfd);
 	if (flag_gre_if_isset)
-		remove_gre_if_tunnel();
+		remove_tunnel(mcb.gre_src, mcb.gre_dst, mcb.gre_local, mcb.gre_remote);
 	if (connected)
 		logout(&mcb);
 	if (flag_daemon)
