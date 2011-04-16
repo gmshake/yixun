@@ -5,34 +5,35 @@ AC_PREREQ(2.61)
 AC_INIT(yixun, 1.1, gmshake@gmail.com)
 AC_CONFIG_SRCDIR([src/main.c])
 AC_CONFIG_HEADER([config.h])
-AC_CANONICAL_HOST
 AM_INIT_AUTOMAKE
-
-# Checks for programs.
-AC_ARG_ENABLE(debug, 
-			  [AC_HELP_STRING([--enable-debug], [Build a debug version])],
-			  [CFLAGS="$CFLAGS -g -O0 -DDEBUG -Wall"], 
-			  [CFLAGS="$CFLAGS -Os -Wall"])
+AC_CANONICAL_HOST
 
 AC_PROG_AWK
 AC_PROG_CC
 AC_PROG_CXX
-AC_PROG_INSTALL
 AC_PROG_CPP
+AC_PROG_INSTALL
 AC_PROG_MKDIR_P
 AC_PROG_RANLIB
 
+# Checks for programs.
+AC_ARG_ENABLE(debug, 
+			  [AC_HELP_STRING([--enable-debug], [Build a debug version])],
+			  [CFLAGS="-DDEBUG -Wall -g -O0"],
+			  [CFLAGS="-Wall -O2"]
+			 )
+
 case $host_vendor in
 	*openwrt*)
-	AC_DEFINE([YIXUN_PID], ["/var/run/yixun.pid"], [pid file])
+	CFLAGS="$CFLAGS -Os"
 	;;
 esac
 
 # Checks for libraries.
-have_iconv="yes"
 AC_ARG_ENABLE(iconv, 
 			  [AC_HELP_STRING([--disable-iconv], [Do NOT compile with iconv])], 
 			  [have_iconv="no"], 
+			  [have_iconv="yes"], 
 			  ,)
 if test "x$have_iconv" = "xyes"; then
 	case $host_os in
@@ -52,9 +53,10 @@ if test "x$have_iconv" = "xyes"; then
 fi
 
 # Checks for header files.
+AC_HEADER_STDBOOL
 AC_HEADER_STDC
 
-AC_CHECK_HEADERS([arpa/inet.h fcntl.h netinet/in.h stdint.h stdlib.h string.h strings.h sys/ioctl.h sys/socket.h syslog.h unistd.h])
+AC_CHECK_HEADERS([arpa/inet.h fcntl.h netinet/in.h stdint.h stdlib.h string.h strings.h sys/ioctl.h sys/param.h sys/socket.h syslog.h unistd.h])
 if test "x$have_iconv" = "xyes"; then
 	AC_CHECK_HEADERS([iconv.h])
 fi
@@ -71,8 +73,9 @@ AC_TYPE_UINT32_T
 AC_TYPE_UINT8_T
 
 # Checks for library functions.
+AC_FUNC_FORK
 AC_PROG_GCC_TRADITIONAL
-#AC_FUNC_MALLOC
+AC_FUNC_MALLOC
 AC_FUNC_SELECT_ARGTYPES
 AC_TYPE_SIGNAL
 AC_FUNC_VPRINTF
