@@ -38,7 +38,7 @@
 #include "common_macro.h"
 
 #ifdef DEBUG
-#include "print_hex.h"
+#include "hexdump.h"
 #endif
 
 

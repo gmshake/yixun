@@ -1,3 +1,2 @@
-SUBDIRS = src gre-config
-EXTRA_DIST = route
+SUBDIRS = lib src
 
