@@ -8,4 +8,3 @@ libyixun_a_SOURCES = get_ip_mac.c get_ip_mac.h \
 					 route_op.c route_op.h \
 					 common_macro.h
 
-INCLUDES = -I$(top_srcdir)/lib

@@ -22,7 +22,10 @@
 #include <syslog.h>		/* openlog() */
 
 #include <arpa/inet.h>		/* inet_addr() inet_ntoa */
-#include <net/if_var.h>
+#if defined(__FreeBSD__)
+#include <sys/socket.h>		/* struct sockaddr, requied in net/if.h on BSD */
+#endif
+#include <net/if.h>		/* IFNAMSIZ */
 
 #include "radius.h"
 #include "log_xxx.h"
@@ -31,11 +34,7 @@
 #include "gre_module.h"
 #include "gre_tunnel.h"
 
-#ifdef YIXUN_PID
-#define LOCKFILE YIXUN_PID
-#else
-#define LOCKFILE "/var/tmp/yixun.pid"
-#endif
+#define LOCKFILE "/var/run/yixun.pid"
 
 static int lockfd;		/* lockfile file description */
 //static char *progname;
@@ -352,7 +351,7 @@ sanity_check(int fd)
  * @param flag, 0 indicates not to change route
  *              1, change default gateway and routes followed
  *              2, revert the changes
- */
+ *
 #define FLAG_SET 0x01
 #define FLAG_CROUTE 0x02
 static int
@@ -375,13 +374,11 @@ gre_if_op(int flag, struct mcb *mcb, int argc, char *const argv[])
 	if (flag & FLAG_CROUTE) {
 		if (default_route == 0) {
 			in_addr_t dst = 0, mask = 0;
-			/* get default route */
 			if (route_get(&dst, &mask, &default_route, NULL) < 0) {
 				mask = 0xffffffff;
 				dst = mcb->auth_server;
-				/* get route to authorize server */
 				if (route_get(&dst, &mask, &default_route, NULL) < 0)
-					return -1;	/* joking me ??? */
+					return -1;	
 			}
 		}
 		p += sprintf(p, " -C%s ", inet_itoa(default_route));
@@ -404,7 +401,7 @@ gre_if_op(int flag, struct mcb *mcb, int argc, char *const argv[])
 	fprintf(stderr, "cmd:%s\n", cmd);
 #endif
 	return system(cmd);
-}
+} */
 
 int
 set_tunnel(in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote, in_addr_t netmask)
@@ -462,7 +459,7 @@ set_tunnel(in_addr_t src, in_addr_t dst, in_addr_t local, in_addr_t remote, in_a
 		   */
 	}
 
-
+	return 0;
 }
 
 int

@@ -485,7 +485,7 @@ act_on_info(void *buff, struct mcb *mcb, int sockfd)
 	if (hd->flag != RADIUS_HEADER_FLAG) {
 		log_err("Error: Invalid server package flag:0x%02x\n", hd->flag);
 #ifdef DEBUG
-		print_hex(buff, 32);
+		hexdump(buff, 32);
 #endif
 		return -1;
 	}
@@ -565,7 +565,7 @@ get_parameters(const void *buff, struct mcb *mcb)
 		if (p->flag != SERVER_SEGMENT_FLAG) {
 			log_err("[%s] Invalid segment flag:0x%02x\n", __FUNCTION__, p->flag);
 #ifdef DEBUG
-			print_hex(p, 64);
+			hexdump(p, 64);
 #endif
 			return -1;
 		}
@@ -595,7 +595,7 @@ get_parameters(const void *buff, struct mcb *mcb)
 				break;
 			case s_rule:
 #ifdef DEBUG
-				print_hex(p, 64);
+				hexdump(p, 64);
 #endif
 				break;
 			case s_mask:

@@ -14,6 +14,7 @@
 #include <net/if.h>		//struct ifreq
 #include <netinet/in.h>		//IPPROTO_GRE sturct sockaddr_in INADDR_ANY
 #if defined(__APPLE__) || defined(__FreeBSD__)
+#include <net/if_var.h>		//struct ifaddr
 #include <netinet/in_var.h>	//struct in_aliasreq
 #endif
 
@@ -67,11 +68,10 @@ gre_find_unused_tunnel(char ifname[])
 	 */
 	bzero(&ifr, sizeof(ifr));
 	strncpy(ifr.ifr_name, "gre0", IFNAMSIZ);
-	if (ioctl(fd, SIOCGIFFLAGS, &ifr) < 0) {
+	if (ioctl(fd, SIOCGIFFLAGS, &ifr) < 0)
 		fprintf(stderr, "%s ioctl(gre0):%s\n", __FUNCTION__, strerror(errno));
-		goto ERROR;
-	}
-	strncpy(ifname, GRENAME, IFNAMSIZ);
+	else
+		strncpy(ifname, GRENAME, IFNAMSIZ);
 
 #else
 	struct if_nameindex *p, *ifn = if_nameindex();
@@ -123,17 +123,17 @@ gre_find_tunnel_with_addr(char ifname[], in_addr_t src, in_addr_t dst, in_addr_t
 	for (p = ifn; p->if_index && p->if_name; p++) {
 #if defined(__linux__)
 		/* linux version get tunnel src, dst addrs */
-		struct ip_tunnel_parm p;
+		struct ip_tunnel_parm parm;
 		bzero(&ifr, sizeof(ifr));
 		strncpy(ifr.ifr_name, p->if_name, IFNAMSIZ);
-		init_tunnel_parm(&p, p->if_name);
-		ifr.ifr_ifru.ifru_data = (void *)&p;
+		init_tunnel_parm(&parm, p->if_name);
+		ifr.ifr_ifru.ifru_data = (void *)&parm;
 
 		if (ioctl(fd, SIOCGETTUNNEL, &ifr) < 0)
 			continue;
-		if (p.iph.protocol != IPPROTO_GRE)
+		if (parm.iph.protocol != IPPROTO_GRE)
 			continue;
-		if (p.iph.daddr != dst || p.iph.saddr != src)
+		if (parm.iph.daddr != dst || parm.iph.saddr != src)
 			continue;
 #else
 		/* BSD/Darwin version, get tunnel src, dst addr */
@@ -435,7 +435,7 @@ gre_remove_tunnel(char ifname[])
 
 	close(fd);
 	return 0;
-//ERROR:
+ERROR:
 	close(fd);
 	return -1;
 }

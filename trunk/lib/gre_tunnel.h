@@ -1,5 +1,5 @@
 /*
- * tunnel.c
+ * gre_tunnel.h
  * gre tunnel ops
  * By Summer Town
  * 2011.04.16

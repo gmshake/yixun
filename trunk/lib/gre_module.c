@@ -13,8 +13,11 @@
 #endif
 
 #if defined(__linux__)
+#include <string.h>		/* strstr() */
 #include <stdlib.h>			//exit()
 #include <fcntl.h>			//open()...
+#include <netinet/ip.h>		/* struct iphdr */
+#include <linux/if>			/* IFNAMSIZ */
 #include <linux/if_tunnel.h>	//SIOCADDTUNNEL...
 #endif
 
