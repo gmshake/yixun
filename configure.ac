@@ -55,8 +55,9 @@ fi
 # Checks for header files.
 AC_HEADER_STDBOOL
 AC_HEADER_STDC
+AC_HEADER_SYS_WAIT
 
-AC_CHECK_HEADERS([arpa/inet.h fcntl.h netinet/in.h stdint.h stdlib.h string.h strings.h sys/ioctl.h sys/param.h sys/socket.h syslog.h unistd.h])
+AC_CHECK_HEADERS([arpa/inet.h fcntl.h netinet/in.h stdint.h stdlib.h string.h strings.h sys/file.h sys/ioctl.h sys/param.h sys/socket.h syslog.h unistd.h])
 if test "x$have_iconv" = "xyes"; then
 	AC_CHECK_HEADERS([iconv.h])
 fi
@@ -79,7 +80,7 @@ AC_FUNC_MALLOC
 AC_FUNC_SELECT_ARGTYPES
 AC_TYPE_SIGNAL
 AC_FUNC_VPRINTF
-AC_CHECK_FUNCS([alarm atexit bzero ftruncate inet_ntoa memset select socket stpcpy strchr strerror strstr])
+AC_CHECK_FUNCS([alarm atexit bzero ftruncate inet_ntoa memset select socket stpcpy strchr strerror strstr strcasestr])
 
 AC_CONFIG_FILES([Makefile
                  lib/Makefile

@@ -1,6 +1,5 @@
 /*
  *  radius.c
- *  YiXun
  *
  *  Created by Summer Town on 1/1/11.
  *  Copyright 2010 __MyCompanyName__. All rights reserved.
@@ -13,18 +12,20 @@
 #include <unistd.h>
 
 #include <sys/types.h>
-#include <string.h>		/* strcpy()... */
+
+#if defined(__linux__)	/* Linux stuff...*/
+#define __USE_GNU
+#include <string.h>		/* strcpy(), strcasestr()... */
+#undef __USE_GNU
+#endif
+
 #include <strings.h>		/* bzero() */
 
+#include <sys/socket.h>		/* PF_INET, AF_INET, sockaddr, bind(), connect()... */
 #include <arpa/inet.h>		/* inet_addr() */
 #include <netinet/in.h>		/* in_addr_t sockaddr_in INADDR_ANY */
-#include <sys/socket.h>		/* PF_INET, AF_INET, sockaddr, bind(), connect()... */
 
 #include "log_xxx.h"
-
-#if USE_PTHREAD
-#include <pthread.h>
-#endif
 
 #include <fcntl.h>
 #include <errno.h>
@@ -374,10 +375,6 @@ wait_msg(struct mcb *mcb)
 	fd_set rfds;
 	struct timeval tv;
 
-#if USE_PTHREAD
-	pthread_testcancel();
-#endif
-
 	tv.tv_sec = mcb->select_timeout;
 	tv.tv_usec = 0;
 	FD_ZERO(&rfds);
@@ -389,16 +386,15 @@ wait_msg(struct mcb *mcb)
 				log_perror("[%s] select", __FUNCTION__);
 			return 0;
 		case 0:
-			mcb->select_timeout++;
+			if (mcb->select_timeout < 10)
+				mcb->select_timeout++;
 			return 0;
 		default:
 			if (!FD_ISSET(sockListen, &rfds))
 				return 0;
+			mcb->select_timeout = 1;
 			break;
 	}
-#if USE_PTHREAD
-	pthread_testcancel();
-#endif
 
 	BUFF_ALIGNED(r_buff, R_BUF_LEN);
 	struct sockaddr_in r_client;
