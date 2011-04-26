@@ -16,7 +16,7 @@ enum login_state {
 	offline,
 	connecting,
 	online,
-	disconnection
+	disconnecting
 };
 
 extern enum login_state login_state;

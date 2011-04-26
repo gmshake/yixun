@@ -10,9 +10,10 @@ yixun_SOURCES = main.c \
 				radius.c radius.h \
 				server.c server.h \
 				tunnel.c tunnel.h \
+				yixun_config.c yixun_config.h \
 				usage.c \
 				version.c \
-				rds_types.h yixun_config.h
+				rds_types.h
 
 yixun_LDADD = $(top_srcdir)/lib/libyixun.a
 

@@ -20,6 +20,9 @@
 #include "yixun_config.h"
 #include "radius.h"
 
+#define MAX_CLIENT 10
+#define R_BUF_LEN 1024
+
 static int sock_listen;
 static int is_listening;
 
@@ -48,7 +51,7 @@ start_listen(void)
 	bzero(&local, sizeof(local));
 	local.sin_addr.s_addr = INADDR_ANY; /* listen on 0.0.0.0 is NOT a good idea*/
 	local.sin_family = AF_INET;
-	local.sin_port = htons(RADIUS_PORT);
+	local.sin_port = htons(listenport);
 
 	if (bind(sock_listen, (struct sockaddr *)&local, sizeof(local)) != 0) {
 		log_perror("%s: bind(%s)", __FUNCTION__, inet_ntoa(local.sin_addr));
@@ -133,7 +136,7 @@ wait_msg(void)
 
 	log_info("%s: accept: %s\n", __FUNCTION__, inet_ntoa(r_client.sin_addr));
 
-	tv.tv_sec = RCV_TIMEOUT;
+	tv.tv_sec = rcv_timeout;
 	tv.tv_usec = 0;
 	if (setsockopt(sock_client, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
 		log_perror("%s: setsockopt(SO_RCVTIMEO)", __FUNCTION__);
