@@ -1,4 +1,4 @@
-
+#include <sys/socket.h>	/* struct sockaddr */
 #include <stdio.h>
 #include <stdbool.h>
 
