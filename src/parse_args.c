@@ -4,7 +4,7 @@
 #include <getopt.h>
 #include <stdbool.h>
 
-#include "radius.h"
+//#include "radius.h"
 #include "check_config.h"
 
 extern bool flag_changeroute;
@@ -19,11 +19,17 @@ extern bool log_opened;
 extern bool connected;
 extern bool flag_gre_if_isset;
 
-extern struct mcb mcb;
-
 extern char *conf_file;
 
 extern const char *progname;
+
+/* in parameters */
+const char *username;
+const char *password;
+const char *serverip;
+const char *clientip;
+const char *mac;
+
 
 extern void usage(int status);
 extern void version(void);
@@ -55,19 +61,19 @@ parse_args(int argc, char *const argv[])
 	while ((ch = getopt_long(argc, argv, "u:p:i:m:f:ADTVtvqxh", opts, NULL)) != -1) {
 		switch (ch) {
 			case 'u':
-				mcb.username = optarg;
+				username = optarg;
 				break;
 			case 'p':
-				mcb.password = optarg;
+				password = optarg;
 				break;
 			case 's':
-				mcb.serverip = optarg;
+				serverip = optarg;
 				break;
 			case 'i':
-				mcb.clientip = optarg;
+				clientip = optarg;
 				break;
 			case 'm':
-				mcb.mac = optarg;
+				mac = optarg;
 				break;
 			case 'f':
 				conf_file = optarg;
@@ -138,9 +144,9 @@ parse_args(int argc, char *const argv[])
 					fputs("require server-ip\n", stderr);
 					*/
 				if (err & (0x02 | 0x04)) {
-					if (err & 0x0002 && mcb.username == NULL) {
+					if (err & 0x0002 && username == NULL) {
 						fputs("require username\n", stderr);
-						if (err & 0x0004 && mcb.password == NULL)
+						if (err & 0x0004 && password == NULL)
 							fputs("require password\n", stderr);
 						usage(EXIT_FAILURE);
 					}

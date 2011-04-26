@@ -7,7 +7,7 @@
 
 #include <config.h>
 
-#include <unistd.h>		/* ftruncate() */
+#include <unistd.h>		/* sleep(), */
 #include <sys/types.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,29 +15,24 @@
 #include <string.h>
 #include <errno.h>
 #include <syslog.h>		/* openlog() */
-#include <getopt.h>		/* getopt_long() */
 
+#include <fcntl.h>		/* open() */
 #include <sys/file.h>	/* flock() */
-
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>		/* inet_addr() inet_ntoa */
-#include <net/if.h>		/* IFNAMSIZ */
 
 #include <signal.h>
 
 #include "sys.h"
 #include "parse_args.h"
+#include "lock_file.h"
 #include "tunnel.h"
 #include "radius.h"
+#include "server.h"
 #include "log_xxx.h"
 #include "common_macro.h"
-#include "route_op.h"
 
 #define LOCKFILE "/var/run/yixun.pid"
 
 static int lockfd;		/* lockfile file description */
-//static char *progname;
 
 bool flag_changeroute = false;
 bool flag_daemon = true;
@@ -48,11 +43,10 @@ bool flag_quiet = false;
 bool flag_exit = false;
 
 char *conf_file;
-struct mcb mcb;
 
 static bool log_opened = false;
 static bool connected = false;
-static bool flag_gre_if_isset = false;
+static bool flag_tunnel_isset = false;
 
 static in_addr_t default_route = 0;
 
@@ -63,10 +57,6 @@ int check_conf_file(const char *conf);
 int sanity_check(int fd);
 void handle_signals(int sig);
 static int quit_daemon(void);
-
-static int open_pid_file(void);
-static int write_pid(int fd);
-static int close_pid_file(int fd);
 
 void cleanup(void);
 
@@ -97,7 +87,7 @@ main(int argc, char *const argv[])
 		return quit_daemon();
 
 	/* try to lock */
-	if (flag_daemon && (lockfd = open_pid_file()) < 0)
+	if (flag_daemon && (lockfd = open_lock_file(LOCKFILE)) < 0)
 		return EXIT_FAILURE;
 
 	if (atexit(cleanup) < 0) {
@@ -107,7 +97,7 @@ main(int argc, char *const argv[])
 
 	int retry_count = 4;
 	do {
-		int rval = login(&mcb);
+		int rval = login();
 		if (rval == 0)
 			break;
 		else if (rval > 0)
@@ -142,7 +132,7 @@ main(int argc, char *const argv[])
 		log_perror("Can not set gre interface");
 		return EXIT_FAILURE;
 	}
-	flag_gre_if_isset = true;
+	flag_tunnel_isset = true;
 
 	signal(SIGHUP, handle_signals);
 	signal(SIGINT, handle_signals);
@@ -150,11 +140,11 @@ main(int argc, char *const argv[])
 	signal(SIGALRM, handle_signals);
 	signal(SIGTERM, handle_signals);
 
-	alarm(mcb.timeout);
+	alarm(gre_timeout);
 
 	/* if not extended test, loop forever */
 	while(1) {
-		wait_msg(&mcb);
+		wait_msg();
 	}
 
 	return EXIT_SUCCESS;
@@ -189,48 +179,6 @@ quit_daemon(void)
 	return 0;
 }
 
-int
-open_pid_file(void)
-{
-	int fd = open(LOCKFILE, O_RDWR | O_CREAT, 0640);
-	if (fd < 0) {
-		log_perror("%s: open(%)s", __FUNCTION__, LOCKFILE);
-		return -1;
-	}
-	if (flock(fd, LOCK_EX | LOCK_NB) < 0) {
-		log_perror("%s: flock(%s)", __FUNCTION__, LOCKFILE);
-		return -1;
-	}
-	return fd;
-}
-
-int
-write_pid(int fd)
-{
-	if (ftruncate(fd, 0) < 0) {
-		log_perror("%s: unable to ftruncate(%s)", __FUNCTION__, LOCKFILE);
-		return -1;
-	}
-	char fbuff[32];
-	snprintf(fbuff, sizeof(fbuff), "%ld", (long)getpid());
-
-	if (write(fd, fbuff, strlen(fbuff)) < 0) {
-		log_perror("%s: write(%s)", __FUNCTION__, LOCKFILE);
-		return -2;
-	}
-	return 0;
-}
-
-int
-close_pid_file(int fd)
-{
-	if (flock(fd, LOCK_UN) < 0)
-		log_perror("%s: flock()", __FUNCTION__);
-	if (close(lockfd) < 0)
-		log_perror("%s: close()", __FUNCTION__);
-	return 0;
-}
-
 void
 handle_signals(int sig)
 {
@@ -245,9 +193,9 @@ handle_signals(int sig)
 			exit(EXIT_SUCCESS);
 			break;
 		case SIGALRM:
-			if (keep_alive(&mcb) < 0) {
+			if (keep_alive() < 0) {
 				sleep(1);
-				if (keep_alive(&mcb) < 0) {
+				if (keep_alive() < 0) {
 					/* unable to send keep alive to BRAS */
 					log_warning("Failed sending keep-alive packets.");
 					stop_listen();
@@ -255,7 +203,7 @@ handle_signals(int sig)
 					exit(EXIT_SUCCESS);
 				}
 			}
-			alarm(mcb.timeout);
+			alarm(gre_timeout);
 			break;
 		case SIGTERM:
 			exit(EXIT_SUCCESS);
@@ -271,13 +219,14 @@ void
 cleanup(void)
 {
 	if (flag_daemon)
-		close_pid_file(lockfd);
-	if (flag_gre_if_isset)
+		close_lock_file(lockfd);
+	if (flag_tunnel_isset)
 		remove_tunnel();
 	if (connected)
-		logout(&mcb);
+		logout();
 	if (flag_daemon)
 		log_notice("Daemon ended.");
 	if (log_opened)
 		closelog();
 }
+
