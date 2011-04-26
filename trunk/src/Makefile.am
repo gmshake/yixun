@@ -1,9 +1,15 @@
 #AM_CFLAGS = 
 
 bin_PROGRAMS = yixun
-yixun_SOURCES = main.c convert_code.c convert_code.h \
+yixun_SOURCES = main.c \
+				check_config.c check_config.h \
+				convert_code.c convert_code.h \
 				encode_password.c encode_password.h \
+				parse_args.c parse_args.h \
 				radius.c radius.h \
+				tunnel.c tunnel.h \
+				usage.c \
+				version.c \
 				rds_types.h yixun_config.h
 
 yixun_LDADD = $(top_srcdir)/lib/libyixun.a

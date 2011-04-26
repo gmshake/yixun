@@ -9,7 +9,9 @@
 #ifndef _RADIUS_H
 #define _RADIUS_H
 
-#include <net/ethernet.h>	//ETHER_ADDR_LEN
+#include <netinet/in.h>
+#include <net/ethernet.h>	/* ETHER_ADDR_LEN */
+#include <net/if.h>			/* IFNAMSIZ */
 #include "yixun_config.h"
 
 struct mcb {
@@ -31,6 +33,7 @@ struct mcb {
 	uint32_t download_band;
 
 	/* internal use */
+	char tunnel[IFNAMSIZ];
 	unsigned int select_timeout;
 	int last_op;
 	int pre_config_done;

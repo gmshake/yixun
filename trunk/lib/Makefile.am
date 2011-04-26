@@ -6,5 +6,6 @@ libyixun_a_SOURCES = get_ip_mac.c get_ip_mac.h \
 					 log_xxx.c log_xxx.h \
 					 private_buff.c private_buff.h \
 					 route_op.c route_op.h \
+					 sys.c sys.h \
 					 common_macro.h
 
