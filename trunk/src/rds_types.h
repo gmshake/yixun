@@ -1,14 +1,13 @@
 /*
  *  rds_types.h
- *  YiXun
  *
  *  Created by Summer Town on 9/19/10.
  *  Copyright 2010 __MyCompanyName__. All rights reserved.
  *
  */
 
-#ifndef _RDS_TYPES_H
-#define _RDS_TYPES_H
+#ifndef RDS_TYPES_H
+#define RDS_TYPES_H
 
 #ifndef RDS_PACKET_LEN
 #define RDS_PACKET_LEN(p) ntohs(((struct rds_packet_header *)(p))->length) + sizeof(struct rds_packet_header);
@@ -105,4 +104,5 @@ const struct str_err error_info[] = {
 	{NULL, 0}
 };
 
-#endif				//_RDS_TYPES_H
+#endif		/* RDS_TYPES_H */
+

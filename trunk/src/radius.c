@@ -43,12 +43,31 @@
 #include "hexdump.h"
 #endif
 
-/* in parameters */
+#ifndef MAX_USER_NAME_LEN
+#define MAX_USER_NAME_LEN 20
+#endif
+#ifndef MAX_CLIENT
+#define MAX_CLIENT 10
+#endif
+#ifndef R_BUF_LEN
+#define R_BUF_LEN 1024
+#endif
+#ifndef S_BUF_LEN
+#define S_BUF_LEN 512
+#endif
+#ifndef SEGMENT_MAX_LEN
+#define SEGMENT_MAX_LEN 256
+#endif
+
+
+/* in parameters 
 extern const char *username;
 extern const char *password;
 extern const char *serverip;
 extern const char *clientip;
 extern const char *mac;
+*/
+
 
 enum login_state login_state = offline;
 
@@ -67,14 +86,12 @@ uint32_t gre_timeout;
 uint32_t gre_upload_band;
 uint32_t gre_download_band;
 
-static int pre_config_done;
 static size_t s_buff_len;
 static char s_buff[S_BUF_LEN];
 static char server_info[SEGMENT_MAX_LEN + (SEGMENT_MAX_LEN >> 1)];
 
 void print_config(void);
 
-static int pre_config(void);
 static int yixun_log_op(int op);
 
 
@@ -95,53 +112,6 @@ static int connect_tm(int socket, const struct sockaddr *addr, socklen_t addr_le
 
 
 /*
- * pre_config(), pre-config necessary infomation, check username, pwd etc.
- * return 0 on success, otherwise -1;
- */
-static int
-pre_config(void)
-{
-	if (username == NULL) {
-		log_err("[%s] Require username\n", __FUNCTION__);
-		return -1;
-	}
-	if (clientip) {
-		gre_src = inet_addr(clientip);
-		if (gre_src == 0 || gre_src == 0xffffffff)
-			log_err("[%s] Invalid ip address:%s\n", __FUNCTION__, clientip);
-	}
-	if (mac) {
-		if (string_to_lladdr(eth_addr, mac) < 0)
-			log_err("[%s] Invalid lladdr:%s\n", __FUNCTION__, mac);
-	}
-
-	bzero(&auth_server, sizeof(auth_server));
-	auth_server.sin_family = AF_INET;
-	auth_server.sin_port = htons(RADIUS_PORT);
-
-	if (serverip) {
-		char tmp[64];
-		strncpy(tmp, serverip, sizeof(tmp));
-		tmp[sizeof(tmp) - 1] = '\0';
-		char *args[2] = { NULL };
-		char *instr = tmp;
-		args[0] = strsep(&instr, "/");
-		args[1] = strsep(&instr, "/");
-		auth_server.sin_addr.s_addr = inet_addr(args[0]);
-		if (args[1] != NULL) {
-			sscanf(args[1], "%u", &auth_server_maskbits);
-			if (auth_server_maskbits > 32)
-				auth_server_maskbits = 32;
-		}
-	} else {
-		auth_server.sin_addr.s_addr = inet_addr(AUTH_SERVER);
-		auth_server_maskbits = AUTH_SERVER_MASKBITS;
-	}
-
-	return 0;
-}
-
-/*
  * yixun_log_op(), make && send proper packet indicated by op
  * @op, which type of packet
  * @param mcb, in/out
@@ -156,18 +126,13 @@ yixun_log_op(int op)
 {
 	static int last_op = 0;
 	int rval = 0;
-	if (! pre_config_done) {
-		if (pre_config() < 0)
-			return -1;
-		pre_config_done = -1;
-	}
 	int sockfd = socket(AF_INET, SOCK_STREAM, 0);
 	if (sockfd < 0) {
 		log_perror("[%s] socket", __FUNCTION__);
 		return -1;
 	}
 	struct timeval tv;
-	tv.tv_sec = CONNECTION_TIMEOUT;
+	tv.tv_sec = conn_timeout;
 	tv.tv_usec = 0;
 
 	if (connect_tm(sockfd, (struct sockaddr *)&auth_server, sizeof(struct sockaddr_in), &tv) < 0) {
@@ -179,12 +144,12 @@ yixun_log_op(int op)
 	 * when op is same as the last op, then there is no\ need to re-make a same send packet
 	 */
 	if (op != last_op) {
-		if (get_ip_mac_by_socket(sockfd, &gre_local, mac ? NULL : eth_addr) < 0) {
+		if (get_ip_mac_by_socket(sockfd, &gre_local, hwaddr[0] ? NULL : eth_addr) < 0) {
 			log_err("[%s] get ip address and eth_addr\n", __FUNCTION__);
 			rval = -1;
 			goto ERROR;
 		}
-		if (clientip == NULL || gre_src == 0 || gre_src == 0xffffffff)
+		if (regip[0] == '\0' || gre_src == 0 || gre_src == 0xffffffff)
 			gre_src = gre_local;
 
 		bzero(s_buff, sizeof(s_buff));
@@ -196,7 +161,7 @@ yixun_log_op(int op)
 
 				uint8_t *sec_pwd = (uint8_t *) malloc(sizeof(uint8_t) * (strlen(password) + 2));
 				if (sec_pwd == NULL) {
-					log_perror("[%s] malloc\n", __FUNCTION__);
+					log_perror("%s: malloc(%u)\n", __FUNCTION__, sizeof(uint8_t) * (strlen(password) + 2));
 					rval = -1;
 					goto ERROR;
 				}
@@ -234,7 +199,7 @@ LOGOUT_KEEPALIVE:
 		s_buff_len = RDS_PACKET_LEN(s_buff);
 		last_op = op;
 	}
-	tv.tv_sec = SND_TIMEOUT;
+	tv.tv_sec = snd_timeout;
 	tv.tv_usec = 0;
 	if (setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) < 0) {
 		log_perror("%s: setsockopt(SO_SNDTIMEO)", __FUNCTION__);
@@ -255,7 +220,7 @@ LOGOUT_KEEPALIVE:
 			log_info("address of r_buff is %p\n", &r_buff);
 #endif
 
-			tv.tv_sec = RCV_TIMEOUT;
+			tv.tv_sec = rcv_timeout;
 			tv.tv_usec = 0;
 			if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
 				log_perror("[%s] setsockopt", __FUNCTION__);
@@ -310,8 +275,10 @@ login(void)
 		return -1;
 
 	int rval = yixun_log_op(LOGIN);
-	if (rval == 0)
+	if (rval == 0) {
+		login_state = online;
 		print_config();
+	}
 	return rval;
 }
 
@@ -322,9 +289,14 @@ login(void)
 int
 logout(void)
 {
-	if (login_state != online)
+	if (login_state == offline)
+		return 0;
+	login_state = disconnecting;
+	if (yixun_log_op(LOGOUT) == 0) {
+		login_state = offline;
+		return 0;
+	} else 
 		return -1;
-	return yixun_log_op(LOGOUT);
 }
 
 /*
@@ -334,8 +306,23 @@ logout(void)
 int
 keep_alive(void)
 {
+	if (login_state != online)
+		return -1;
 
-	return yixun_log_op(KEEPALIVE);
+	int retry = 3;
+	do {
+		/* try to re-send hear-beat packet */
+		if (yixun_log_op(KEEPALIVE) == 0)
+			break;
+		else
+			sleep(1);
+	} while (--retry > 0);
+
+	if (retry == 0) {
+		login_state = offline;
+		return -1;
+	} else
+		return 0;
 }
 
 
@@ -405,9 +392,9 @@ act_on_info(void *buff, int sockfd)
 				stop_listen();
 				return -1;
 			}
-			if (gre_timeout > KEEP_ALIVE_TIMEOUT) {
-				log_notice("Server side timeout is too long:%u, use %u instead\n", gre_timeout, KEEP_ALIVE_TIMEOUT);
-				gre_timeout = KEEP_ALIVE_TIMEOUT;
+			if (gre_timeout > heart_beat_timeout) {
+				log_notice("Server side timeout is too long:%u, use %u instead\n", gre_timeout, heart_beat_timeout);
+				gre_timeout = heart_beat_timeout;
 			}
 			break;
 		}

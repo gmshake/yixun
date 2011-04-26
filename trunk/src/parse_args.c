@@ -4,7 +4,6 @@
 #include <getopt.h>
 #include <stdbool.h>
 
-//#include "radius.h"
 #include "check_config.h"
 
 extern bool flag_changeroute;
@@ -15,13 +14,7 @@ extern bool flag_verbose;
 extern bool flag_quiet;
 extern bool flag_exit;
 
-extern bool log_opened;
-extern bool connected;
-extern bool flag_gre_if_isset;
-
 extern char *conf_file;
-
-extern const char *progname;
 
 /* in parameters */
 const char *username;
@@ -29,7 +22,6 @@ const char *password;
 const char *serverip;
 const char *clientip;
 const char *mac;
-
 
 extern void usage(int status);
 extern void version(void);
@@ -55,7 +47,6 @@ const static struct option opts[] = {
 void
 parse_args(int argc, char *const argv[])
 {
-//	progname = argv[0];
 	int ch;
 
 	while ((ch = getopt_long(argc, argv, "u:p:i:m:f:ADTVtvqxh", opts, NULL)) != -1) {
@@ -122,6 +113,7 @@ parse_args(int argc, char *const argv[])
 	 * required
 	 */
 
+	/* if extended test flag is set, do NOT set flag_daemon */
 	if (flag_etest || flag_exit)
 		flag_daemon = false;
 
@@ -153,5 +145,11 @@ parse_args(int argc, char *const argv[])
 				}
 			}
 	}
+
+	load_default();
+
+	if (check_config() < 0)
+		exit(EXIT_FAILURE);
+
 }
 
