@@ -17,6 +17,8 @@
 #define __USE_GNU
 #include <string.h>		/* strcpy(), strcasestr()... */
 #undef __USE_GNU
+#else
+#include <string.h>
 #endif
 
 #include <strings.h>		/* bzero() */

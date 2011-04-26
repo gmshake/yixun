@@ -1,11 +1,13 @@
+#include <sys/socket.h>		/* AF_INET */
 #include <unistd.h>
 #include <stdio.h>
 #include <errno.h>
-#include <string.h>
+#include <string.h>			/* strsep(), memcpy() */
+#include <strings.h>		/* bzero() */
 
 #include <fcntl.h>
 
-#include <arpa/inet.h>
+#include <arpa/inet.h>		/* inet_addr(), htons() */
 
 #include "defconfig.h"
 #include "yixun_config.h"
