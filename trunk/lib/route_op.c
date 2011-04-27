@@ -49,7 +49,7 @@ find_if_with_name(const char *iface, struct sockaddr_dl *out)
 
 	/* If we found it, then use it */
 	if (sdl)
-		bcopy((char *)sdl, (char *)out, (size_t) (sdl->sdl_len));
+		memcpy((char *)out, (char *)sdl, (size_t) (sdl->sdl_len));
 
 	freeifaddrs(ifap);
 
@@ -69,7 +69,7 @@ route_op(u_char op, in_addr_t * dst, in_addr_t * mask, in_addr_t * gateway, char
 
 #define NEXTADDR(w, u) \
 if (msg.msghdr.rtm_addrs & (w)) {\
-len = ROUNDUP(u.sa.sa_len); bcopy((char *)&(u), cp, len); cp += len;\
+len = ROUNDUP(u.sa.sa_len); memcpy(cp, (char *)&(u), len); cp += len;\
 }
 
 	static int seq = 0;

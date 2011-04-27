@@ -4,6 +4,7 @@
 #include <getopt.h>
 #include <stdbool.h>
 
+#include "yixun_config.h"
 #include "check_config.h"
 
 extern bool flag_changeroute;
@@ -15,13 +16,6 @@ extern bool flag_quiet;
 extern bool flag_exit;
 
 extern char *conf_file;
-
-/* in parameters */
-const char *username;
-const char *password;
-const char *serverip;
-const char *clientip;
-const char *mac;
 
 extern void usage(int status);
 extern void version(void);
@@ -48,23 +42,26 @@ void
 parse_args(int argc, char *const argv[])
 {
 	int ch;
-
 	while ((ch = getopt_long(argc, argv, "u:p:i:m:f:ADTVtvqxh", opts, NULL)) != -1) {
 		switch (ch) {
 			case 'u':
-				username = optarg;
+				strlcpy(username, optarg, sizeof(username));
 				break;
 			case 'p':
-				password = optarg;
+				strlcpy(password, optarg, sizeof(password));
+				//password = optarg;
 				break;
 			case 's':
-				serverip = optarg;
+				strlcpy(authserver, optarg, sizeof(authserver));
+				//serverip = optarg;
 				break;
 			case 'i':
-				clientip = optarg;
+				strlcpy(regip, optarg, sizeof(regip));
+				//clientip = optarg;
 				break;
 			case 'm':
-				mac = optarg;
+				strlcpy(hwaddr, optarg, sizeof(hwaddr));
+				//mac = optarg;
 				break;
 			case 'f':
 				conf_file = optarg;
@@ -105,51 +102,11 @@ parse_args(int argc, char *const argv[])
 	argc -= optind;
 	argv += optind;
 
-/*	extr_argc = argc;
-	extr_argv = argv;*/
-
-	/*
-	 * if do not use configure file, username and password are
-	 * required
-	 */
-
-	/* if extended test flag is set, do NOT set flag_daemon */
-	if (flag_etest || flag_exit)
-		flag_daemon = false;
-
-	if (flag_exit)
-		return;
-
-	int err = check_conf_file(conf_file);
-
-	switch (err) {
-		case 0:
-			break;
-		case -1:
-			fprintf(stderr, "sanity check error\n");
-			exit(EXIT_FAILURE);
-			break;
-		default:
-			{
-				/*
-				if (err & 0x0001 && mcb.serverip == NULL)
-					fputs("require server-ip\n", stderr);
-					*/
-				if (err & (0x02 | 0x04)) {
-					if (err & 0x0002 && username == NULL) {
-						fputs("require username\n", stderr);
-						if (err & 0x0004 && password == NULL)
-							fputs("require password\n", stderr);
-						usage(EXIT_FAILURE);
-					}
-				}
-			}
+#ifdef DEBUG
+	if (argc > 0) {
+		fprintf(stderr, "unkown option: %s\n", argv[0]);
+		fprintf(stderr, "Try `yixun --help' for more information.\n");
 	}
-
-	load_default();
-
-	if (check_config() < 0)
-		exit(EXIT_FAILURE);
-
+#endif
 }
 

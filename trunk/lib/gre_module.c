@@ -9,12 +9,12 @@
 #endif
 
 #if defined(__APPLE__) || defined(__linux__)
+#include <stdlib.h>		/* exit() */
 #include <sys/wait.h>
 #endif
 
 #if defined(__linux__)
 #include <string.h>		/* strstr() */
-#include <stdlib.h>			//exit()
 #include <fcntl.h>			//open()...
 #include <netinet/ip.h>		/* struct iphdr */
 #include <linux/if.h>			/* IFNAMSIZ */
@@ -39,7 +39,7 @@ load_gre_module(void)
 
 	if (pid == 0) {
 		execle("/sbin/kextload", "kextload", "/Library/Extensions/GRE.kext", NULL, NULL);
-		exit(1);
+		exit(EXIT_FAILURE);
 	}
 
 	while (waitpid(pid, 0, 0) < 0) {
