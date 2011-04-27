@@ -61,16 +61,6 @@
 #define SEGMENT_MAX_LEN 256
 #endif
 
-
-/* in parameters 
-extern const char *username;
-extern const char *password;
-extern const char *serverip;
-extern const char *clientip;
-extern const char *mac;
-*/
-
-
 enum login_state login_state = offline;
 
 uint8_t eth_addr[ETHER_ADDR_LEN];
@@ -590,7 +580,7 @@ add_segment(void *buff, enum rds_segment_type type, uint8_t length, uint8_t cont
 		content_len = length;
 
 	if (content && content_len > 0)
-		bcopy(content, s->content, content_len);
+		memcpy(s->content, content, content_len);
 
 	/* 包的长度按网络序存储 */
 	p->length = htons(ntohs(p->length) + s->length);

@@ -427,7 +427,7 @@ gre_set_addr(const char *ifname, in_addr_t local, in_addr_t remote, in_addr_t ne
 	sa.sin_family = AF_INET;
 
 	sa.sin_addr.s_addr = local;
-	bcopy(&sa, &ifr.ifr_addr, sizeof(sa));
+	memcpy(&ifr.ifr_addr, &sa, sizeof(sa));
 #if defined(__APPLE__) || defined(__FreeBSD__)
 	((struct sockaddr_in *)&ifr.ifr_addr)->sin_len = sizeof(sa);
 #endif
@@ -439,7 +439,7 @@ gre_set_addr(const char *ifname, in_addr_t local, in_addr_t remote, in_addr_t ne
 
 	/* set if p-t-p address */
 	sa.sin_addr.s_addr = remote;
-	bcopy(&sa, &ifr.ifr_addr, sizeof(sa));
+	memcpy(&ifr.ifr_addr, &sa, sizeof(sa));
 #if defined(__APPLE__) || defined(__FreeBSD__)
 	((struct sockaddr_in *)&ifr.ifr_addr)->sin_len = sizeof(sa);
 #endif
@@ -452,7 +452,7 @@ gre_set_addr(const char *ifname, in_addr_t local, in_addr_t remote, in_addr_t ne
 	if (netmask != INADDR_ANY) {
 		/* set if netmask */
 		ifr.ifr_addr.sa_family = AF_INET;
-		bcopy(&netmask, &((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr, sizeof(netmask));
+		memcpy(&((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr, &netmask, sizeof(netmask));
 #if defined(__APPLE__) || defined(__FreeBSD__)
 		((struct sockaddr_in *)&ifr.ifr_addr)->sin_len = sizeof(netmask);
 #endif
@@ -602,7 +602,7 @@ gre_delete_tunnel_addr(const char *ifname)
 	sa.sin_family = AF_INET;
 
 	sa.sin_addr.s_addr = 0;
-	bcopy(&sa, &ifr.ifr_addr, sizeof(sa));
+	memcpy(&ifr.ifr_addr, &sa, sizeof(sa));
 	if (ioctl(fd, SIOCSIFADDR, &ifr) < 0) {
 		fprintf(stderr, "%s: ioctl(SIOCSIFADDR): %s\n", \
 				__FUNCTION__, strerror(errno));
@@ -611,7 +611,7 @@ gre_delete_tunnel_addr(const char *ifname)
 
 	/* delete if p-p address */
 	sa.sin_addr.s_addr = 0;
-	bcopy(&sa, &ifr.ifr_addr, sizeof(sa));
+	memcpy(&ifr.ifr_addr, &sa, sizeof(sa));
 	if (ioctl(fd, SIOCSIFDSTADDR, &ifr) < 0) {
 		fprintf(stderr, "%s: ioctl(SIOCSIFDSTADDR): %s\n", \
 				__FUNCTION__, strerror(errno));

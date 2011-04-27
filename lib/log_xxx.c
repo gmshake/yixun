@@ -87,7 +87,7 @@ log_perror(const char *fmt, ...)
 	if (cnt < sizeof(buff))
 		cnt += vsnprintf(buff + cnt, sizeof(buff) - cnt, fmt, ap);
 	if (cnt < sizeof(buff))
-		cnt += snprintf(buff + cnt, sizeof(buff) - cnt, ":%s", strerror(errno));
+		cnt += snprintf(buff + cnt, sizeof(buff) - cnt, ": %s", strerror(errno));
 
 	va_end(ap);
 
@@ -133,7 +133,7 @@ vlog_xxx(const char *prepend, int log_level, const char *fmt, va_list ap)
 			case LDAEMON:
 				vsyslog(log_level, newfmt, ap);
 				break;
-			#if USE_PTHREAD
+#if USE_PTHREAD
 			case LBUFF:
 				cnt = vlogf(newfmt, ap);
 				break;

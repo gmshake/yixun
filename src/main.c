@@ -28,6 +28,7 @@
 #include "radius.h"
 #include "server.h"
 #include "log_xxx.h"
+#include "check_config.h"
 #include "common_macro.h"
 
 #define LOCKFILE "/var/run/yixun.pid"
@@ -53,9 +54,7 @@ static in_addr_t default_route = 0;
 //static int extr_argc;
 //static char *const *extr_argv;
 
-int check_conf_file(const char *conf);
-int sanity_check(int fd);
-void handle_signals(int sig);
+static void handle_signals(int sig);
 static int quit_daemon(void);
 
 void cleanup(void);
@@ -65,9 +64,9 @@ main(int argc, char *const argv[])
 {
 	parse_args(argc, argv);	/* process args */
 
-	/* sanity check done */
-	if (flag_test)
-		return EXIT_SUCCESS;
+	/* if extended test flag is set, do NOT set flag_daemon */
+	if (flag_etest || flag_exit)
+		flag_daemon = false;
 
 	if (flag_quiet)
 		set_log_type(LNONE);
@@ -85,6 +84,27 @@ main(int argc, char *const argv[])
 
 	if (flag_exit)
 		return quit_daemon();
+
+	switch (check_conf_file(conf_file)) {
+		case -1:
+			log_info("Syntax Error\n");
+			return EXIT_FAILURE;
+		case 0:
+			break;
+		default:
+			break;
+	}
+
+	load_default();
+
+	if (check_config() < 0)
+		return EXIT_FAILURE;
+
+	/* sanity check done */
+	if (flag_test) {
+		log_info("Syntax OK\n");
+		return EXIT_SUCCESS;
+	}
 
 	/* try to lock */
 	if (flag_daemon && (lockfd = open_lock_file(LOCKFILE)) < 0)
@@ -125,8 +145,10 @@ main(int argc, char *const argv[])
 	connected = true;
 
 	/* Extended test done */
-	if (flag_etest)
+	if (flag_etest) {
+		printf("Syntax OK\n");
 		return EXIT_SUCCESS;
+	}
 
 	if (set_tunnel() < 0) {
 		log_perror("Can not set gre interface");
