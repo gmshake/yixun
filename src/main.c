@@ -87,12 +87,13 @@ main(int argc, char *const argv[])
 
 	switch (check_conf_file(conf_file)) {
 		case -1:
-			log_info("Syntax Error\n");
 			return EXIT_FAILURE;
 		case 0:
 			break;
 		default:
-			break;
+			/* there must be some syntax error in config file */
+			log_info("Syntax check failed\n");
+			return EXIT_FAILURE;
 	}
 
 	load_default();
