@@ -34,36 +34,38 @@ extern bool flag_verbose;
 extern bool flag_quiet;
 
 enum key_type {
-	ch,
-	in,
-	ui
+	st,	/* string */
+	in,	/* interger */
+	ui	/* unsigned interger */
 };
 
 struct key {
-	const char *parm;
-	unsigned int hash;
-	void * data;
+	const char *key;
+	void * val;
 	enum key_type type;
+	unsigned int hash;
 	struct key *next;
 };
 
-struct key keys[] = {
-	{"username",	0,	username,	ch},
-	{"password",	0,	password,	ch},
-	{"hwaddr",		0,	hwaddr,		ch},
-	{"regip",		0,	regip,		ch},
-	{"authserver",	0,	authserver,	ch},
-	{"msgserver",	0,	msgserver,	ch},
-	{"serverport",	0,	&serverport,	ui},
-	{"listenport",	0,	&listenport,	ui},
-	{"conn_timeout",	0,	&conn_timeout,	in},
-	{"snd_timeout",	0,	&snd_timeout,	in},
-	{"rcv_timeout",	0,	&rcv_timeout,	in},
-	{"heart_beat_timeout",	0,	&heart_beat_timeout,	in},
-	{NULL,			0,	NULL,		0}
+/* known keys and key type */
+static struct key keys[] = {
+	{"username",		username,		st},
+	{"password",		password,		st},
+	{"hwaddr",			hwaddr,			st},
+	{"regip",			regip,			st},
+	{"authserver",		authserver,		st},
+	{"msgserver",		msgserver,		st},
+	{"serverport",		&serverport,	ui},
+	{"listenport",		&listenport,	ui},
+	{"conn_timeout",	&conn_timeout,	in},
+	{"snd_timeout",		&snd_timeout,	in},
+	{"rcv_timeout",		&rcv_timeout,	in},
+	{"heart_beat_timeout",		&heart_beat_timeout,	in},
+	{NULL,				NULL,			0}
 };
 
-struct key *key_pcb[SLOT_CNT] = {NULL};
+/* hash table */
+static struct key *key_pcb[SLOT_CNT];
 
 /* DJB Hash */
 static unsigned int
@@ -73,38 +75,24 @@ hash(const char *s)
 	while (*s) {
 		h += (h << 5) + *s++;
 	}
-	return h & 0x7fffffff;
+	return h;
 }
 
+/* calculate key hash, put key into the hash table key_pcb */
 static void
-init_keys(struct key *k)
+init_keys(struct key *p)
 {
-#ifdef DEBUG 
-	fprintf(stderr, "dump key_pcb...\n");
-	hexdump(key_pcb, sizeof(key_pcb));
+	for (; p->key; p++) {
+		p->hash = hash(p->key);
+#ifdef DEBUG
+		fprintf(stderr, "%s: key: %s\thash: %u\n", \
+				__FUNCTION__, p->key, p->hash);
 #endif
 
-	while (k->parm) {
-		k->hash = hash(k->parm);
-#ifdef DEBUG
-		fprintf(stderr, "%s: k->parm = %s, k->hash = %u\n", \
-				__FUNCTION__, k->parm, k->hash);
-#endif
-		k->next = NULL;
-		unsigned int slot = k->hash % SLOT_CNT;
-		if (key_pcb[slot] == NULL) 
-			key_pcb[slot] = k;
-		else {
-
-#ifdef DEBUG
-		fprintf(stderr, "dump key_pcb[%u]...", slot);
-		hexdump(key_pcb[slot], sizeof(key_pcb[slot]));
-#endif
-			struct key *p = key_pcb[slot];
-			while (p->next) p = p->next;
-			p->next = k;
-		}
-		k++;
+		/* simpler policy, just INSERT */
+		unsigned int slot = p->hash % SLOT_CNT;
+		p->next = key_pcb[slot];
+		key_pcb[slot] = p;
 	}
 }
 
@@ -112,7 +100,7 @@ static int
 read_key_val(const char *key, const char *val)
 {
 #ifdef DEBUG
-	fprintf(stderr, "%s: key: %s, val: %s\n", __FUNCTION__, key, val);
+	fprintf(stderr, "%s: key: %s\tval: %s\n", __FUNCTION__, key, val);
 #endif
 
 	unsigned int h = hash(key);
@@ -120,16 +108,16 @@ read_key_val(const char *key, const char *val)
 
 	struct key *p = key_pcb[slot];
 	for (p = key_pcb[slot]; p; p = p->next) {
-		if (p->hash == h && strcmp(key, p->parm) == 0) {
+		if (p->hash == h && strcmp(key, p->key) == 0) {
 			switch (p->type) {
-				case ch:
-					strlcpy((char *)p->data, val, CONF_LEN);
+				case st:
+					strlcpy((char *)p->val, val, CONF_LEN);
 					break;
 				case in:
-					sscanf(val, "%i", (int *)p->data);
+					sscanf(val, "%i", (int *)p->val);
 					break;
 				case ui:
-					sscanf(val, "%u", (unsigned int *)p->data);
+					sscanf(val, "%u", (unsigned int *)p->val);
 					break;
 				default:
 					/* should never happen */
@@ -144,7 +132,7 @@ read_key_val(const char *key, const char *val)
 }
 
 
-char *
+static char *
 skip_blanks(char *s)
 {
 	if (s == NULL)
@@ -165,8 +153,42 @@ skip_blanks(char *s)
 	return NULL;
 }
 
+
+static void
+load_default_conf(void)
+{
+	if (serverport == 0)
+		serverport = SERVER_PORT;
+
+	if (listenport == 0)
+		listenport = LISTEN_PORT;
+
+	if (authserver[0] == '\0')
+		strlcpy(authserver, AUTH_SERVER, sizeof(authserver));
+
+	if (msgserver[0] == '\0')
+		strlcpy(msgserver, MSG_SERVER, sizeof(msgserver));
+
+	if (conn_timeout == 0)
+		conn_timeout = CONNECTION_TIMEOUT;
+
+	if (snd_timeout == 0)
+		snd_timeout = SND_TIMEOUT;
+
+	if (rcv_timeout == 0)
+		rcv_timeout = RCV_TIMEOUT;
+
+	if (heart_beat_timeout == 0)
+		heart_beat_timeout = HEART_BEAT_TIMEOUT;
+}
+
+
+/*
+ * todo: some val like "hello world" has spaces, current
+ * impletement discards all spaces, that's urgly...
+ */
 static int
-get_params(char *buff, size_t len, char *key, size_t key_len, char *val, size_t val_len)
+get_key_val(char *buff, size_t len, char *key, size_t key_len, char *val, size_t val_len)
 {
 	int i;
 	int l1 = 0, l2 = 0;
@@ -229,53 +251,10 @@ get_params(char *buff, size_t len, char *key, size_t key_len, char *val, size_t 
 
 
 /*
- * check sanity of config file
- * @fd,		file discription
- *
- * @return	success 0, error -1, others
- * 0x0001, server-ip missing
- * 0x0002, username missing
- * 0x0004, password missing
+ * real load conf file
  */
-int
-sanity_check(int fd)
-{
-	printf("%s: **** TODO ****\n", __FUNCTION__);
-	return 0xffff;
-}
-
-void
-load_default_conf(void)
-{
-	if (serverport == 0)
-		serverport = SERVER_PORT;
-
-	if (listenport == 0)
-		listenport = LISTEN_PORT;
-
-	if (authserver[0] == '\0')
-		strlcpy(authserver, AUTH_SERVER, sizeof(authserver));
-
-	if (msgserver[0] == '\0')
-		strlcpy(msgserver, MSG_SERVER, sizeof(msgserver));
-
-	if (conn_timeout == 0)
-		conn_timeout = CONNECTION_TIMEOUT;
-
-	if (snd_timeout == 0)
-		snd_timeout = SND_TIMEOUT;
-
-	if (rcv_timeout == 0)
-		rcv_timeout = RCV_TIMEOUT;
-
-	if (heart_beat_timeout == 0)
-		heart_beat_timeout = HEART_BEAT_TIMEOUT;
-}
-
-
-
 static int
-load_config(const char *fl)
+_load_conf_file(const char *fl)
 {
 	FILE * fp;
 	if ((fp = fopen(fl, "r")) == NULL)
@@ -290,7 +269,7 @@ load_config(const char *fl)
 	while ((buff = fgetln(fp, &len))) {
 		line++;
 		char k[80], v[80];
-		switch (get_params(buff, len, k, sizeof(k), v, sizeof(v))) {
+		switch (get_key_val(buff, len, k, sizeof(k), v, sizeof(v))) {
 			case -1:
 				/* error */
 				fprintf(stderr, "Syntax error in %s at line %d\n", \
@@ -322,8 +301,8 @@ DONE:
  * on error, return -1;
  * on syntax error, return syntax error count;
  */
-int
-check_conf_file(const char *conf)
+static int
+load_conf_file(const char *conf)
 {
 	static int keys_inited = 0;
 	if (!keys_inited) {
@@ -334,20 +313,20 @@ check_conf_file(const char *conf)
 	int err;
 
 	if (conf) {
-		if ((err = load_config(conf)) < 0)
+		if ((err = _load_conf_file(conf)) < 0)
 			fprintf(stderr, "can not open %s: %s\n", conf, strerror(errno));
 
 		return err;
 	} else {
 		/* if the CONF_FILE does not exist, continue next conf file */
-		if ((err = load_config(CONF_FILE)) > 0)
+		if ((err = _load_conf_file(CONF_FILE)) > 0)
 			return err;
 
 		char *p = getenv("HOME");
 		if (p) {
 			char priv_conf[MAXPATHLEN];
 			snprintf(priv_conf, sizeof(priv_conf), "%s/%s", p, PRIV_CONF_FILE);
-			if ((err = load_config(priv_conf)) > 0)
+			if ((err = _load_conf_file(priv_conf)) > 0)
 				return err;
 		} else
 			fprintf(stderr, "warnning: $HOME not set\n");
@@ -356,7 +335,11 @@ check_conf_file(const char *conf)
 	}
 }
 
-void
+/*
+ * parsing cmd config, this will override
+ * existing config from config file
+ */
+static void
 load_cmd_conf(void)
 {
 	if (arg_username)
@@ -375,7 +358,7 @@ load_cmd_conf(void)
  * check_config(), check necessary infomation, username, pwd etc.
  * return 0 on success, otherwise -1;
  */
-int
+static int
 check_config(void)
 {
 	if (username[0] == '\0') {
@@ -442,4 +425,24 @@ check_config(void)
 	return 0;
 }
 
+int
+load_config(void)
+{
+	load_default_conf();
+	switch (load_conf_file(arg_conf_file)) {
+		case -1:
+			return -1;
+		case 0:
+			break;
+		default:
+			/* there must be some syntax error in config file */
+			log_info("Syntax check failed\n");
+			return -1;
+	}
+	load_cmd_conf();
+
+	if (check_config() < 0)
+		return -1;
+	return 0;
+}
 
