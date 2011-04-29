@@ -43,8 +43,6 @@ bool flag_verbose = false;
 bool flag_quiet = false;
 bool flag_exit = false;
 
-char *conf_file;
-
 static bool log_opened = false;
 static bool connected = false;
 static bool flag_tunnel_isset = false;
@@ -54,19 +52,15 @@ static in_addr_t default_route = 0;
 //static int extr_argc;
 //static char *const *extr_argv;
 
+static int start_login(void);
 static void handle_signals(int sig);
 static int quit_daemon(void);
-
-void cleanup(void);
+static void cleanup(void);
 
 int
 main(int argc, char *const argv[])
 {
 	parse_args(argc, argv);	/* process args */
-
-	/* if extended test flag is set, do NOT set flag_daemon */
-	if (flag_etest || flag_exit)
-		flag_daemon = false;
 
 	if (flag_quiet)
 		set_log_type(LNONE);
@@ -85,25 +79,12 @@ main(int argc, char *const argv[])
 	if (flag_exit)
 		return quit_daemon();
 
-	load_default_conf();
-	switch (check_conf_file(conf_file)) {
-		case -1:
-			return EXIT_FAILURE;
-		case 0:
-			break;
-		default:
-			/* there must be some syntax error in config file */
-			log_info("Syntax check failed\n");
-			return EXIT_FAILURE;
-	}
-	load_cmd_conf();
-
-	if (check_config() < 0)
+	if (load_config() < 0)
 		return EXIT_FAILURE;
 
 	/* sanity check done */
 	if (flag_test) {
-		log_info("Syntax OK\n");
+		printf("Syntax OK\n");
 		return EXIT_SUCCESS;
 	}
 
@@ -116,21 +97,8 @@ main(int argc, char *const argv[])
 		return EXIT_FAILURE;
 	}
 
-	int retry_count = 4;
-	do {
-		int rval = login();
-		if (rval == 0)
-			break;
-		else if (rval > 0)
-			/* Username or password error, do not retry */
-			return EXIT_FAILURE;
-		sleep(1);
-	} while (retry_count-- > 0);
-
-	if (retry_count <= 0) {
-		log_err("Can not log in\n");
+	if (start_login() < 0)
 		return EXIT_FAILURE;
-	}
 
 	if (flag_daemon) {
 		if (daemon(0, 0) < 0) {
@@ -174,6 +142,28 @@ main(int argc, char *const argv[])
 }
 
 
+static int
+start_login(void)
+{
+	int retry_count = 4;
+	do {
+		int rval = login();
+		if (rval == 0)
+			break;
+		else if (rval > 0)
+			/* Username or password error, do not retry */
+			return -1;
+		sleep(1);
+	} while (retry_count-- > 0);
+
+	if (retry_count <= 0) {
+		log_err("Can not log in\n");
+		return -1;
+	}
+
+	return 0;
+}
+
 int
 quit_daemon(void)
 {
@@ -207,8 +197,32 @@ handle_signals(int sig)
 {
 	switch (sig) {
 		case SIGHUP:
-			log_notice("%s: reload config file\n", __FUNCTION__);
-			log_notice("...TODO...\n");
+			log_notice("reload config...\n");
+			if (flag_tunnel_isset) {
+				remove_tunnel();
+				flag_tunnel_isset = false;
+			}
+
+			if (connected) {
+				logout();
+				connected = false;
+			}
+
+			if (load_config() < 0)
+				exit(EXIT_FAILURE);
+
+			log_notice("reload done\n");
+
+			if (start_login() < 0)
+				exit(EXIT_FAILURE);
+			connected = true;
+
+			if (set_tunnel() < 0) {
+				log_perror("Can not set gre interface");
+				exit(EXIT_FAILURE);
+			}
+			flag_tunnel_isset = true;
+
 			break;
 		case SIGINT:
 			log_notice("%s: user interupted\n", __FUNCTION__);
@@ -217,14 +231,11 @@ handle_signals(int sig)
 			break;
 		case SIGALRM:
 			if (keep_alive() < 0) {
-				sleep(1);
-				if (keep_alive() < 0) {
-					/* unable to send keep alive to BRAS */
-					log_warning("Failed sending keep-alive packets.");
-					stop_listen();
-					connected = false;
-					exit(EXIT_SUCCESS);
-				}
+				/* unable to send keep alive to BRAS */
+				log_warning("Failed sending keep-alive packets.");
+				stop_listen();
+				connected = false;
+				exit(EXIT_SUCCESS);
 			}
 			alarm(gre_timeout);
 			break;
@@ -241,12 +252,12 @@ handle_signals(int sig)
 void
 cleanup(void)
 {
-	if (flag_daemon)
-		close_lock_file(lockfd);
 	if (flag_tunnel_isset)
 		remove_tunnel();
 	if (connected)
 		logout();
+	if (flag_daemon)
+		close_lock_file(lockfd);
 	if (flag_daemon)
 		log_notice("Daemon ended.");
 	if (log_opened)

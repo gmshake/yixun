@@ -100,7 +100,7 @@ log_perror(const char *fmt, ...)
 			case LDAEMON:
 				syslog(LOG_ERR, buff);
 				break;
-			#if USE_PTHREAD
+#if USE_PTHREAD
 			case LBUFF:
 				cnt += snprintf(buff + cnt, sizeof(buff) - cnt, "\n");
 				append_msg(buff);
@@ -139,9 +139,6 @@ vlog_xxx(const char *prepend, int log_level, const char *fmt, va_list ap)
 				break;
 #endif
 			default:
-#ifdef DEBUG
-				fprintf(stderr, "unsupported log_type %x\n", log_type);
-#endif
 				break;
 		}
 		i <<= 1;

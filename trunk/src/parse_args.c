@@ -15,11 +15,11 @@ extern bool flag_verbose;
 extern bool flag_quiet;
 extern bool flag_exit;
 
-extern char *conf_file;
 
 extern void usage(int status);
 extern void version(void);
 
+const char *arg_conf_file;
 const char *arg_username;
 const char *arg_password;
 const char *arg_authserver;
@@ -66,7 +66,7 @@ parse_args(int argc, char *const argv[])
 				arg_hwaddr = optarg;
 				break;
 			case 'f':
-				conf_file = optarg;
+				arg_conf_file = optarg;
 				break;
 			case 'A':
 				flag_changeroute = true;
@@ -107,5 +107,14 @@ parse_args(int argc, char *const argv[])
 		fprintf(stderr, "unrecognized operand: %s\n", argv[0]);
 		usage(EXIT_FAILURE);
 	}
+
+	if (flag_quiet && flag_verbose) {
+		fprintf(stderr, "option `--quiet' can NOT be used together with `--verbose'\n");
+		usage(EXIT_FAILURE);
+	}
+
+	/* if extended test flag is set, do NOT set flag_daemon */
+	if (flag_etest || flag_exit)
+		flag_daemon = false;
 }
 
