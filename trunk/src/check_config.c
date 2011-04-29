@@ -19,6 +19,7 @@
 #include "log_xxx.h"
 #include "radius.h"
 #include "get_ip_mac.h"
+#include "parse_args.h"
 
 #ifdef DEBUG 
 #include "hexdump.h"
@@ -108,17 +109,18 @@ init_keys(struct key *k)
 }
 
 static int
-read_conf(const char *key, const char *val)
+read_key_val(const char *key, const char *val)
 {
 #ifdef DEBUG
 	fprintf(stderr, "%s: key: %s, val: %s\n", __FUNCTION__, key, val);
 #endif
 
-	unsigned int slot = hash(key) % SLOT_CNT;
+	unsigned int h = hash(key);
+	unsigned int slot = h % SLOT_CNT;
 
 	struct key *p = key_pcb[slot];
 	for (p = key_pcb[slot]; p; p = p->next) {
-		if (strcmp(key, p->parm) == 0) {
+		if (p->hash == h && strcmp(key, p->parm) == 0) {
 			switch (p->type) {
 				case ch:
 					strlcpy((char *)p->data, val, CONF_LEN);
@@ -163,8 +165,8 @@ skip_blanks(char *s)
 	return NULL;
 }
 
-int
-get_params(char *buff, size_t len, char *par1, size_t par1_len, char *par2, size_t par2_len)
+static int
+get_params(char *buff, size_t len, char *key, size_t key_len, char *val, size_t val_len)
 {
 	int i;
 	int l1 = 0, l2 = 0;
@@ -181,14 +183,19 @@ get_params(char *buff, size_t len, char *par1, size_t par1_len, char *par2, size
 			case '\n':
 				continue;
 			default:
-				if (l1 < par1_len)
-					par1[l1++] = buff[i];
+				if (l1 < key_len)
+					key[l1++] = buff[i];
 		}
 	}
 
-	par1[l1] = '\0';
+	/* start with '#', comment */
+	if (key[0] == '#')
+		return 0;
 
-	/* check if is empty line */
+	/*
+	 * check if it is empty line, or
+	 * foo, missing "=" and "bar"
+	 */
 	if (! has_equal)
 		return l1 == 0 ? 0 : -1;
 
@@ -196,7 +203,7 @@ get_params(char *buff, size_t len, char *par1, size_t par1_len, char *par2, size
 	if (l1 == 0)
 		return -1;
 
-	/* foo, missing "=" and "bar" */
+	key[l1] = '\0';
 
 	for (i++; i < len && buff[i]; i++) {
 		switch (buff[i]) {
@@ -206,16 +213,16 @@ get_params(char *buff, size_t len, char *par1, size_t par1_len, char *par2, size
 			case '\n':
 				continue;
 			default:
-				if (l2 < par2_len)
-					par2[l2++] = buff[i];
+				if (l2 < val_len)
+					val[l2++] = buff[i];
 		}
 	}
 
-	par2[l2] = '\0';
-
-	/* foo = , missing "bar" */
+	/* foo = , missing "bar", indicates use default */
 	if (l2 == 0)
-		return -1;
+		return 0;
+
+	val[l2] = '\0';
 
 	return 1;
 }
@@ -237,89 +244,8 @@ sanity_check(int fd)
 	return 0xffff;
 }
 
-
-/*
- * check configuration file
- * @conf, in, user defined file, NULL to indicates use default conf file
- * 
- * on sucess, return 0;
- * on error, return -1;
- * on syntax error, return syntax error count;
- */
-int
-check_conf_file(const char *conf)
-{
-	static int keys_inited = 0;
-	if (!keys_inited) {
-		init_keys(keys);
-		keys_inited = 1;
-	}
-
-	if (conf) {
-		FILE * fp;
-		if ((fp = fopen(conf, "r")) == NULL) {
-			fprintf(stderr, "cannot open %s: %s\n", conf, strerror(errno));
-			return -1;
-		}
-
-		int errcnt = 0; /* syntax error count */
-
-		char *buff;
-		size_t len;
-		int line = 0;
-
-		while ((buff = fgetln(fp, &len))) {
-			line++;
-			char s[80], t[80];
-			switch (get_params(buff, len, s, sizeof(s), t, sizeof(t))) {
-				case -1:
-					/* error */
-					fprintf(stderr, "Syntax error in %s at line %d\n", \
-							conf, line);
-					errcnt++;
-					break;
-				case 0:
-					/* empty line */
-					break;
-				default:
-					/* get a line */
-					if (read_conf(s, t) < 0)
-						goto DONE;
-			}
-		}
-DONE:
-		if (fclose(fp) == EOF) {
-			fprintf(stderr, "fclose(%s): %s\n", conf, strerror(errno));
-			return -1;
-		}
-
-		return errcnt;
-	} else {
-		char *p = getenv("HOME");
-		if (p) {
-			char priv_conf[MAXPATHLEN];
-			snprintf(priv_conf, sizeof(priv_conf), "%s/%s", p, PRIV_CONF_FILE);
-			if (chmod(priv_conf, 0644) == 0) {
-				int err = check_conf_file(priv_conf);
-				if (err)
-					return err;
-			}
-		} else
-			fprintf(stderr, "warnning: $HOME not set\n");
-
-		if (chmod(CONF_FILE, 0644) == 0) {
-			int err = check_conf_file(CONF_FILE);
-			if (err)
-				return err;
-		}
-
-		return 0;
-	}
-
-}
-
 void
-load_default(void)
+load_default_conf(void)
 {
 	if (serverport == 0)
 		serverport = SERVER_PORT;
@@ -344,6 +270,105 @@ load_default(void)
 
 	if (heart_beat_timeout == 0)
 		heart_beat_timeout = HEART_BEAT_TIMEOUT;
+}
+
+
+
+static int
+load_config(const char *fl)
+{
+	FILE * fp;
+	if ((fp = fopen(fl, "r")) == NULL)
+		return -1;
+
+	int errcnt = 0; /* syntax error count */
+
+	char *buff;
+	size_t len;
+	int line = 0;
+
+	while ((buff = fgetln(fp, &len))) {
+		line++;
+		char k[80], v[80];
+		switch (get_params(buff, len, k, sizeof(k), v, sizeof(v))) {
+			case -1:
+				/* error */
+				fprintf(stderr, "Syntax error in %s at line %d\n", \
+						fl, line);
+				errcnt++;
+				break;
+			case 0:
+				/* empty line, or comments */
+				break;
+			default:
+				/* get a line */
+				if (read_key_val(k, v) < 0)
+					goto DONE;
+		}
+	}
+DONE:
+	if (fclose(fp) == EOF) {
+		fprintf(stderr, "fclose(%s): %s\n", fl, strerror(errno));
+		return 0;
+	}
+
+	return errcnt;
+}
+/*
+ * check configuration file
+ * @conf, in, user defined file, NULL to indicates use default conf file
+ * 
+ * on sucess, return 0;
+ * on error, return -1;
+ * on syntax error, return syntax error count;
+ */
+int
+check_conf_file(const char *conf)
+{
+	static int keys_inited = 0;
+	if (!keys_inited) {
+		init_keys(keys);
+		keys_inited = 1;
+	}
+
+	int err;
+
+	if (conf) {
+		if ((err = load_config(conf)) < 0)
+			fprintf(stderr, "can not open %s: %s\n", conf, strerror(errno));
+
+		return err;
+	} else {
+		/* if the CONF_FILE does not exist, continue next conf file */
+		if ((err = load_config(CONF_FILE)) > 0)
+			return err;
+
+		char *p = getenv("HOME");
+		if (p) {
+			char priv_conf[MAXPATHLEN];
+			snprintf(priv_conf, sizeof(priv_conf), "%s/%s", p, PRIV_CONF_FILE);
+			if ((err = load_config(priv_conf)) > 0)
+				return err;
+		} else
+			fprintf(stderr, "warnning: $HOME not set\n");
+
+		return 0;
+	}
+}
+
+void
+load_cmd_conf(void)
+{
+	if (arg_username)
+		strlcpy(username, arg_username, sizeof(username));
+	if (arg_password)
+		strlcpy(password, arg_password, sizeof(password));
+	if (arg_authserver)
+		strlcpy(authserver, arg_authserver, sizeof(authserver));
+	if (arg_regip)
+		strlcpy(regip, arg_regip, sizeof(regip));
+	if (arg_hwaddr)
+		strlcpy(hwaddr, arg_hwaddr, sizeof(hwaddr));
 }
 
 /*
