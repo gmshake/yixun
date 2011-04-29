@@ -85,6 +85,7 @@ main(int argc, char *const argv[])
 	if (flag_exit)
 		return quit_daemon();
 
+	load_default_conf();
 	switch (check_conf_file(conf_file)) {
 		case -1:
 			return EXIT_FAILURE;
@@ -95,8 +96,7 @@ main(int argc, char *const argv[])
 			log_info("Syntax check failed\n");
 			return EXIT_FAILURE;
 	}
-
-	load_default();
+	load_cmd_conf();
 
 	if (check_config() < 0)
 		return EXIT_FAILURE;

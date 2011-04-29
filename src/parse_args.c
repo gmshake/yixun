@@ -1,7 +1,6 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <getopt.h>
 #include <stdbool.h>
 
@@ -20,6 +19,12 @@ extern char *conf_file;
 
 extern void usage(int status);
 extern void version(void);
+
+const char *arg_username;
+const char *arg_password;
+const char *arg_authserver;
+const char *arg_regip;
+const char *arg_hwaddr;
 
 const static struct option opts[] = {
 	{"config",		required_argument,	NULL,	'f'},
@@ -46,23 +51,19 @@ parse_args(int argc, char *const argv[])
 	while ((ch = getopt_long(argc, argv, "u:p:i:m:f:ADTVtvqxh", opts, NULL)) != -1) {
 		switch (ch) {
 			case 'u':
-				strlcpy(username, optarg, sizeof(username));
+				arg_username = optarg;
 				break;
 			case 'p':
-				strlcpy(password, optarg, sizeof(password));
-				//password = optarg;
+				arg_password = optarg;
 				break;
 			case 's':
-				strlcpy(authserver, optarg, sizeof(authserver));
-				//serverip = optarg;
+				arg_authserver = optarg;
 				break;
 			case 'i':
-				strlcpy(regip, optarg, sizeof(regip));
-				//clientip = optarg;
+				arg_regip = optarg;
 				break;
 			case 'm':
-				strlcpy(hwaddr, optarg, sizeof(hwaddr));
-				//mac = optarg;
+				arg_hwaddr = optarg;
 				break;
 			case 'f':
 				conf_file = optarg;
@@ -96,18 +97,15 @@ parse_args(int argc, char *const argv[])
 				usage(EXIT_SUCCESS);
 				break;
 			default:
-				//fprintf(stderr, "%s: invalid option -- %c\n", PACKAGE, ch);
 				usage(EXIT_FAILURE);
 		}
 	}
 	argc -= optind;
 	argv += optind;
 
-#ifdef DEBUG
 	if (argc > 0) {
-		fprintf(stderr, "unkown option: %s\n", argv[0]);
-		fprintf(stderr, "Try `yixun --help' for more information.\n");
+		fprintf(stderr, "unrecognized operand: %s\n", argv[0]);
+		usage(EXIT_FAILURE);
 	}
-#endif
 }
 
