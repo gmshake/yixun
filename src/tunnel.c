@@ -12,7 +12,8 @@
 
 extern bool flag_changeroute;
 
-char tunnel[IFNAMSIZ];
+static char tunnel[IFNAMSIZ];
+static bool flag_tunnel_isset = false;
 
 int
 set_tunnel(void)
@@ -46,6 +47,9 @@ set_tunnel(void)
 	}
 
 #if defined(__linux__)
+	/* set link dev as well?? ie: ip_tunnel_parm.link */
+
+	/* bring gre tunnel up */
 	if (gre_set_link(tunnel, 1) < 0) {
 		fprintf(stderr, "error bring %s up\n", tunnel);
 		return -1;
@@ -56,6 +60,8 @@ set_tunnel(void)
 		return -1;
 	}
 #endif
+
+	flag_tunnel_isset = true;
 
 	/*
 	 * hack: if tunnel remote is the same as tunnel interface dst, as we have no 
@@ -101,6 +107,9 @@ remove_tunnel(void)
 		*/
 	}
 
+	if (! flag_tunnel_isset)
+		return 0;
+
 #if defined(__linux__)
 	if (gre_remove_tunnel(tunnel) < 0) {
 		fprintf(stderr, "can NOT remove tunnel %s\n", tunnel);
@@ -119,6 +128,7 @@ remove_tunnel(void)
 	}
 #endif
 
+	flag_tunnel_isset = false;
 	return 0;
 }
 

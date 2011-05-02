@@ -45,7 +45,6 @@ bool flag_exit = false;
 
 static bool log_opened = false;
 static bool connected = false;
-static bool flag_tunnel_isset = false;
 
 static in_addr_t default_route = 0;
 
@@ -79,6 +78,7 @@ main(int argc, char *const argv[])
 	if (flag_exit)
 		return quit_daemon();
 
+	signal(SIGHUP, SIG_IGN);
 	if (load_config() < 0)
 		return EXIT_FAILURE;
 
@@ -123,7 +123,6 @@ main(int argc, char *const argv[])
 		log_perror("Can not set gre interface");
 		return EXIT_FAILURE;
 	}
-	flag_tunnel_isset = true;
 
 	signal(SIGHUP, handle_signals);
 	signal(SIGINT, handle_signals);
@@ -198,10 +197,9 @@ handle_signals(int sig)
 	switch (sig) {
 		case SIGHUP:
 			log_notice("reload config...\n");
-			if (flag_tunnel_isset) {
-				remove_tunnel();
-				flag_tunnel_isset = false;
-			}
+
+			remove_tunnel();
+			stop_listen();
 
 			if (connected) {
 				logout();
@@ -221,11 +219,10 @@ handle_signals(int sig)
 				log_perror("Can not set gre interface");
 				exit(EXIT_FAILURE);
 			}
-			flag_tunnel_isset = true;
 
 			break;
 		case SIGINT:
-			log_notice("%s: user interupted\n", __FUNCTION__);
+			log_notice("user interupted\n");
 		case SIGQUIT:
 			exit(EXIT_SUCCESS);
 			break;
@@ -246,14 +243,15 @@ handle_signals(int sig)
 			log_warning("%s: Unkown signal %d", __FUNCTION__, sig);
 			return;
 	}
+#if ! (defined(__FreeBSD__) || defined(__apple__))
 	signal(sig, handle_signals);	/* let signal be caught again */
+#endif
 }
 
 void
 cleanup(void)
 {
-	if (flag_tunnel_isset)
-		remove_tunnel();
+	remove_tunnel();
 	if (connected)
 		logout();
 	if (flag_daemon)
