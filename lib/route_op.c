@@ -4,22 +4,23 @@
  * 2011.01.01 12:07 am
  */
 
-#include <stdio.h>
 #include <unistd.h>
+#include <sys/socket.h>		/* struct sockaddr */
+#include <stdio.h>
 #include <string.h>
+#include <strings.h>
 
-#include <sys/ioctl.h>		// ioctl()
-#include <sys/socket.h>		// place it before <net/if.h> struct sockaddr
-#include <net/if.h>		//struct ifreq
+#include <sys/ioctl.h>		/* ioctl() */
+#include <net/if.h>		/* struct ifreq */
 
 #if defined(__APPLE__) || defined(__FreeBSD__)
-#include <net/if_dl.h>		//struct sockaddr_dl
+#include <net/if_dl.h>		/* struct sockaddr_dl */
 #endif
 
-#include <netinet/in.h>		//IPPROTO_GRE sturct sockaddr_in INADDR_ANY
-#include <arpa/inet.h>		// inet_addr()
-#include <net/route.h>		// struct rt_msghdr
-#include <ifaddrs.h>		//getifaddrs() freeifaddrs()
+#include <netinet/in.h>		/* IPPROTO_GRE sturct sockaddr_in INADDR_ANY */
+#include <arpa/inet.h>		/* inet_addr() */
+#include <net/route.h>		/* struct rt_msghdr, linux struct rtentry */
+#include <ifaddrs.h>		/* getifaddrs() freeifaddrs() */
 
 #include <errno.h>
 
@@ -311,9 +312,41 @@ route_add(in_addr_t dst, in_addr_t mask, in_addr_t gateway, const char *iface)
 {
 #if defined(__APPLE__) || defined(__FreeBSD__)
 	return route_op(RTM_ADD, &dst, &mask, &gateway, (char *)iface);
+#elif defined(__linux__)
+	int fd;
+	if ((fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+		perror("socket()");
+		return -1;
+	}
+
+	struct rtentry rt;
+	bzero(&rt, sizeof(rt));
+	((struct sockaddr_in *)&rt.rt_dst)->sin_family = AF_INET;
+	((struct sockaddr_in *)&rt.rt_gateway)->sin_family = AF_INET;
+	((struct sockaddr_in *)&rt.rt_genmask)->sin_family = AF_INET;
+
+	/* make sure dst is network addr */
+	dst &= mask;
+	((struct sockaddr_in *)&rt.rt_dst)->sin_addr.s_addr = dst;
+	((struct sockaddr_in *)&rt.rt_gateway)->sin_addr.s_addr = gateway;
+	((struct sockaddr_in *)&rt.rt_genmask)->sin_addr.s_addr = mask;
+
+	rt.rt_dev = (char *)iface;
+
+	if (gateway != 0 && gateway != 0xffffffff)
+		rt.rt_flags |= RTF_GATEWAY;
+	if (mask == 0xffffffff)
+		rt.rt_flags |= RTF_HOST;
+	rt.rt_flags |= RTF_UP;
+
+	int err;
+	if ((err = ioctl(fd, SIOCADDRT, &rt)) < 0)
+		perror("ioctl(SIOCADDRT)");
+
+	close(fd);
+	return err;
 #else
-	printf("%s: todo...\n", __FUNCTION__);
-	return -1;
+#error Target OS not supported yet!
 #endif
 }
 
@@ -333,8 +366,31 @@ route_delete(in_addr_t dst, in_addr_t mask)
 {
 #if defined(__APPLE__) || defined(__FreeBSD__)
 	return route_op(RTM_DELETE, &dst, &mask, 0, NULL);
+#elif defined(__linux__)
+	int fd;
+	if ((fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+		perror("socket()");
+		return -1;
+	}
+
+	struct rtentry rt;
+	bzero(&rt, sizeof(rt));
+	((struct sockaddr_in *)&rt.rt_dst)->sin_family = AF_INET;
+	((struct sockaddr_in *)&rt.rt_gateway)->sin_family = AF_INET;
+	((struct sockaddr_in *)&rt.rt_genmask)->sin_family = AF_INET;
+
+	/* make sure dst is network addr */
+	dst &= mask;
+	((struct sockaddr_in *)&rt.rt_dst)->sin_addr.s_addr = dst;
+	((struct sockaddr_in *)&rt.rt_genmask)->sin_addr.s_addr = mask;
+
+	int err;
+	if ((err = ioctl(fd, SIOCDELRT, &rt)) < 0)
+		perror("ioctl(SIOCDELRT)");
+
+	close(fd);
+	return err;
 #else
-	printf("%s: todo...\n", __FUNCTION__);
-	return -1;
+#error Target OS not supported yet!
 #endif
 }

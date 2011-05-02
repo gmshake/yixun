@@ -29,6 +29,8 @@
 #include <linux/if_tunnel.h>	/* SIOCADDTUNNEL... */
 #endif
 
+#include "sys.h"		/* strlcpy() */
+
 #if defined(__linux__)
 #define GRENAME "greyixun"
 #endif
