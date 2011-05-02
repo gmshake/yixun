@@ -3,8 +3,8 @@
 #include <sys/socket.h>		/* AF_INET */
 #include <sys/param.h>		/* MAXPATHLEN */
 #include <unistd.h>
-#include <stdio.h>
-#include <stdlib.h>			/* fopen(), fclose(), fgetln(), getenv() */
+#include <stdio.h>			/* BUFSIZ */
+#include <stdlib.h>			/* fopen(), fclose(), getenv() */
 #include <errno.h>
 #include <string.h>			/* strsep(), memcpy() */
 #include <strings.h>		/* bzero() */
@@ -262,14 +262,12 @@ _load_conf_file(const char *fl)
 
 	int errcnt = 0; /* syntax error count */
 
-	char *buff;
-	size_t len;
+	char buff[BUFSIZ];
 	int line = 0;
-
-	while ((buff = fgetln(fp, &len))) {
+	while ((fgets(buff, sizeof(buff), fp))) {
 		line++;
 		char k[80], v[80];
-		switch (get_key_val(buff, len, k, sizeof(k), v, sizeof(v))) {
+		switch (get_key_val(buff, sizeof(buff), k, sizeof(k), v, sizeof(v))) {
 			case -1:
 				/* error */
 				fprintf(stderr, "Syntax error in %s at line %d\n", \
