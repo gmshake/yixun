@@ -28,6 +28,7 @@
 
 #include <netinet/in.h>		/* struct sockaddr_in */
 
+#include "sys.h"
 #include "log_xxx.h"
 #include "common_macro.h"
 

@@ -80,7 +80,7 @@ AC_FUNC_MALLOC
 AC_FUNC_SELECT_ARGTYPES
 AC_TYPE_SIGNAL
 AC_FUNC_VPRINTF
-AC_CHECK_FUNCS([alarm atexit bzero ftruncate inet_ntoa memset select socket stpcpy strchr strerror strstr strcasestr])
+AC_CHECK_FUNCS([alarm atexit bzero ftruncate inet_ntoa memset select socket stpcpy strchr strerror strlcpy strstr strcasestr])
 
 AC_CONFIG_FILES([Makefile
                  lib/Makefile

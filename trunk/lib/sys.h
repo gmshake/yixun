@@ -13,6 +13,10 @@
 extern void bzero(void *s, size_t n);
 #endif
 
+#if ! HAVE_STRLCPY
+extern size_t strlcpy(char *dst, const char *src, size_t size);
+#endif
+
 #if ! HAVE_STPCPY
 extern char * stpcpy(char *to, const char *from);
 #endif
