@@ -8,6 +8,8 @@
 #ifndef YIXUN_CONFIG_H
 #define YIXUN_CONFIG_H
 
+#include <sys/types.h>
+
 #ifndef CONF_LEN
 #define CONF_LEN 32
 #endif
