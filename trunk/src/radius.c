@@ -82,7 +82,7 @@ static size_t s_buff_len;
 static char s_buff[S_BUF_LEN];
 static char server_info[SEGMENT_MAX_LEN + (SEGMENT_MAX_LEN >> 1)];
 
-void print_config(void);
+void print_server_config(void);
 
 static int yixun_log_op(int op);
 
@@ -269,7 +269,7 @@ login(void)
 	int rval = yixun_log_op(LOGIN);
 	if (rval == 0) {
 		login_state = online;
-		print_config();
+		print_server_config();
 	}
 	return rval;
 }
@@ -319,15 +319,15 @@ keep_alive(void)
 
 
 /*
- * print_config(), print configuration from returned by server
+ * print_server_config(), print configuration from returned by server
  */
 void
-print_config(void)
+print_server_config(void)
 {
 	log_notice("src IP address:    %s\n", inet_itoa(gre_src));
 	log_notice("dst IP address:    %s\n", inet_itoa(gre_dst));
 	log_notice("Local IP address:  %s\n", inet_itoa(gre_local));
-	log_notice("Remote IP address: %s\n",inet_itoa(gre_remote));
+	log_notice("Remote IP address: %s\n", inet_itoa(gre_remote));
 	log_notice("P-t-P Netmask:     %s\n", inet_itoa(gre_netmask));
 	log_notice("Upload band:       %ukbps\n", gre_upload_band);
 	log_notice("Download band:     %ukbps\n", gre_download_band);

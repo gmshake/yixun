@@ -41,7 +41,7 @@ enum key_type {
 
 struct key {
 	const char *key;
-	void * val;
+	void *val;
 	enum key_type type;
 	unsigned int hash;
 	struct key *next;
@@ -55,7 +55,6 @@ static struct key keys[] = {
 	{"regip",			regip,			st},
 	{"authserver",		authserver,		st},
 	{"msgserver",		msgserver,		st},
-	{"serverport",		&serverport,	ui},
 	{"listenport",		&listenport,	ui},
 	{"conn_timeout",	&conn_timeout,	in},
 	{"snd_timeout",		&snd_timeout,	in},
@@ -84,10 +83,6 @@ init_keys(struct key *p)
 {
 	for (; p->key; p++) {
 		p->hash = hash(p->key);
-#ifdef DEBUG
-		fprintf(stderr, "%s: key: %s\thash: %u\n", \
-				__FUNCTION__, p->key, p->hash);
-#endif
 
 		/* simpler policy, just INSERT */
 		unsigned int slot = p->hash % SLOT_CNT;
@@ -99,10 +94,6 @@ init_keys(struct key *p)
 static int
 read_key_val(const char *key, const char *val)
 {
-#ifdef DEBUG
-	fprintf(stderr, "%s: key: %s\tval: %s\n", __FUNCTION__, key, val);
-#endif
-
 	unsigned int h = hash(key);
 	unsigned int slot = h % SLOT_CNT;
 
@@ -131,7 +122,7 @@ read_key_val(const char *key, const char *val)
 	return -1;
 }
 
-
+/*
 static char *
 skip_blanks(char *s)
 {
@@ -152,14 +143,12 @@ skip_blanks(char *s)
 	}
 	return NULL;
 }
+*/
 
 
 static void
 load_default_conf(void)
 {
-	if (serverport == 0)
-		serverport = SERVER_PORT;
-
 	if (listenport == 0)
 		listenport = LISTEN_PORT;
 
@@ -218,14 +207,21 @@ get_key_val(char *buff, size_t len, char *key, size_t key_len, char *val, size_t
 	 * check if it is empty line, or
 	 * foo, missing "=" and "bar"
 	 */
-	if (! has_equal)
-		return l1 == 0 ? 0 : -1;
+	if (! has_equal) {
+		if (key_len == 0)
+			return -1;	/* key_len should always larger than 0 */
+		else
+			return l1 == 0 ? 0 : -1;
+	}
 
 	/* = bar , missing "foo" */
 	if (l1 == 0)
 		return -1;
 
-	key[l1] = '\0';
+	if (l1 < key_len)
+		key[l1] = '\0';
+	else if (key_len > 0)
+		key[l1 - 1] = '\0';
 
 	for (i++; i < len && buff[i]; i++) {
 		switch (buff[i]) {
@@ -244,7 +240,10 @@ get_key_val(char *buff, size_t len, char *key, size_t key_len, char *val, size_t
 	if (l2 == 0)
 		return 0;
 
-	val[l2] = '\0';
+	if (l2 < val_len)
+		val[l2] = '\0';
+	else if (val_len > 0)
+		val[l2 - 1] = '\0';
 
 	return 1;
 }
@@ -302,12 +301,6 @@ DONE:
 static int
 load_conf_file(const char *conf)
 {
-	static int keys_inited = 0;
-	if (!keys_inited) {
-		init_keys(keys);
-		keys_inited = 1;
-	}
-
 	int err;
 
 	if (conf) {
@@ -352,6 +345,41 @@ load_cmd_conf(void)
 		strlcpy(hwaddr, arg_hwaddr, sizeof(hwaddr));
 }
 
+static int
+ato_addr_port(const char *cp, struct sockaddr_in *s)
+{
+	char buff[64];
+	char *args[2];
+	char *instr;
+	in_addr_t addr;
+	unsigned int port = SERVER_PORT;	/* default server port here */
+
+	strlcpy(buff, cp, sizeof(buff));
+	instr = buff;
+	args[0] = strsep(&instr, ":");
+	args[1] = strsep(&instr, ":");
+
+	if ((addr = inet_addr(args[0])) == INADDR_NONE) {
+		log_err("invalid ip addr: %s\n", args[0]);
+		return -1;
+	}
+
+	if (args[1]) {
+		sscanf(args[1], "%u", &port);
+		if (port == 0 || port > 65535) {
+			log_err("port out of range: %u\n", port);
+			return -1;
+		}
+	}
+
+	bzero(s, sizeof(*s));
+	s->sin_family = AF_INET;
+	s->sin_addr.s_addr = addr;
+	s->sin_port = htons(port);
+
+	return 0;
+}
+	
 /*
  * check_config(), check necessary infomation, username, pwd etc.
  * return 0 on success, otherwise -1;
@@ -376,35 +404,18 @@ check_config(void)
 		if (string_to_lladdr(eth_addr, hwaddr) < 0)
 			log_err("invalid lladdr:%s\n", hwaddr);
 	}
-	if (serverport == 0 || serverport > 65535) {
-		log_err("server port out of range: %u\n", serverport);
-		return -1;
-	}
-	if (listenport == 0 || listenport > 65535) {
-		log_err("listen port out of range: %u\n", listenport);
-		return -1;
-	}
-
-	bzero(&auth_server, sizeof(auth_server));
-	auth_server.sin_family = AF_INET;
-	auth_server.sin_port = htons(serverport);
 
 	if (authserver[0] == '\0') {
 		log_err("require auth server ip\n");
 		return -1;
 	}
 
-	char tmp[64];
-	strlcpy(tmp, authserver, sizeof(tmp));
-	char *args[2] = { NULL };
-	char *instr = tmp;
-	args[0] = strsep(&instr, "/");
-	args[1] = strsep(&instr, "/");
-	auth_server.sin_addr.s_addr = inet_addr(args[0]);
-	if (args[1] != NULL) {
-		sscanf(args[1], "%u", &auth_server_maskbits);
-		if (auth_server_maskbits > 32)
-			auth_server_maskbits = 32;
+	if (ato_addr_port(authserver, &auth_server) < 0)
+		return -1;
+
+	if (listenport == 0 || listenport > 65535) {
+		log_err("listen port out of range: %u\n", listenport);
+		return -1;
 	}
 
 	if (conn_timeout < 1) {
@@ -426,7 +437,15 @@ check_config(void)
 int
 load_config(void)
 {
+	static int keys_inited = 0;
+
 	load_default_conf();
+
+	if (!keys_inited) {
+		init_keys(keys);
+		keys_inited = 1;
+	}
+
 	switch (load_conf_file(arg_conf_file)) {
 		case -1:
 			return -1;
@@ -444,3 +463,15 @@ load_config(void)
 	return 0;
 }
 
+void
+print_config(void)
+{
+	printf("username:         %s\n", username);
+	printf("password:         %s\n", password);
+	printf("auth server ip:   %s\n", inet_ntoa(auth_server.sin_addr));
+	printf("auth server port: %u\n", ntohs(auth_server.sin_port));
+	printf("listen port:      %u\n", listenport);
+	printf("connect timeout:  %ld\n", (long)conn_timeout);
+	printf("send timeout:     %ld\n", (long)snd_timeout);
+	printf("receive timeout:  %ld\n", (long)rcv_timeout);
+}

@@ -19,7 +19,6 @@ char regip[CONF_LEN];
 char authserver[CONF_LEN];
 char msgserver[CONF_LEN];
 
-unsigned int serverport;
 unsigned int listenport;
 
 time_t conn_timeout;
