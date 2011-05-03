@@ -82,6 +82,9 @@ main(int argc, char *const argv[])
 	if (load_config() < 0)
 		return EXIT_FAILURE;
 
+	if (flag_verbose)
+		print_config();
+
 	/* sanity check done */
 	if (flag_test) {
 		printf("Syntax OK\n");

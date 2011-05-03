@@ -20,7 +20,6 @@ extern char regip[CONF_LEN];
 extern char authserver[CONF_LEN];
 extern char msgserver[CONF_LEN];
 
-extern unsigned int serverport;
 extern unsigned int listenport;
 
 extern time_t conn_timeout;
