@@ -79,7 +79,7 @@ main(int argc, char *const argv[])
 		return quit_daemon();
 
 	signal(SIGHUP, SIG_IGN);
-	if (load_config() < 0)
+	if (load_config() != 0)
 		return EXIT_FAILURE;
 
 	if (flag_verbose)

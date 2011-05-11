@@ -6,7 +6,15 @@
 #include <stdio.h>			/* BUFSIZ */
 #include <stdlib.h>			/* fopen(), fclose(), getenv() */
 #include <errno.h>
-#include <string.h>			/* strsep(), memcpy() */
+
+#if defined(__linux__)  /* Linux stuff...*/
+#define __USE_GNU
+#include <string.h>         /* strsep(), memcpy(), strcasecmp()... */
+#undef __USE_GNU
+#else
+#include <string.h>
+#endif
+
 #include <strings.h>		/* bzero() */
 #include <stdbool.h>
 
@@ -36,7 +44,8 @@ extern bool flag_quiet;
 enum key_type {
 	st,	/* string */
 	in,	/* interger */
-	ui	/* unsigned interger */
+	ui,	/* unsigned interger */
+	bo	/* boolean */
 };
 
 struct key {
@@ -53,13 +62,13 @@ static struct key keys[] = {
 	{"password",		password,		st},
 	{"hwaddr",			hwaddr,			st},
 	{"regip",			regip,			st},
-	{"authserver",		authserver,		st},
-	{"msgserver",		msgserver,		st},
-	{"listenport",		&listenport,	ui},
-	{"conn_timeout",	&conn_timeout,	in},
-	{"snd_timeout",		&snd_timeout,	in},
-	{"rcv_timeout",		&rcv_timeout,	in},
-	{"heart_beat_timeout",		&heart_beat_timeout,	in},
+	{"auth-server",		authserver,		st},
+	{"msg-server",		msgserver,		st},
+	{"listen-port",		&listenport,	ui},
+	{"conn-timeout",	&conn_timeout,	in},
+	{"snd-timeout",		&snd_timeout,	in},
+	{"rcv-timeout",		&rcv_timeout,	in},
+	{"heart-beat-timeout",		&heart_beat_timeout,	in},
 	{NULL,				NULL,			0}
 };
 
@@ -110,6 +119,16 @@ read_key_val(const char *key, const char *val)
 				case ui:
 					sscanf(val, "%u", (unsigned int *)p->val);
 					break;
+				case bo:
+					if (strcasecmp(val, "yes") == 0)
+						*(bool *)p->val = true;
+					else if (strcasecmp(val, "no") == 0)
+						*(bool *)p->val = false;
+					else {
+						fprintf(stderr, "option %s: %s should be `yes' or `no'\n", key, val);
+						return -1;
+					}
+					break;
 				default:
 					/* should never happen */
 					fprintf(stderr, "unkown key type %d\n", p->type);
@@ -121,30 +140,6 @@ read_key_val(const char *key, const char *val)
 	fprintf(stderr, "unknown option %s\n", key);
 	return -1;
 }
-
-/*
-static char *
-skip_blanks(char *s)
-{
-	if (s == NULL)
-		return NULL;
-
-	while (*s) {
-		switch (*s) {
-			case ' ':
-			case '\t':
-			case '\r':
-			case '\n':
-				s++;
-				break;
-			default:
-				return s;
-		}
-	}
-	return NULL;
-}
-*/
-
 
 static void
 load_default_conf(void)
@@ -171,79 +166,181 @@ load_default_conf(void)
 		heart_beat_timeout = HEART_BEAT_TIMEOUT;
 }
 
+static const char *
+skip_blanks(const char *s)
+{
+	if (s == NULL) {
+#ifdef DEBUG
+		fprintf(stderr, "%s: warnning: Null string\n", __FUNCTION__);
+#endif
+		return NULL;
+	}
+
+	for(;;) {
+		switch (*s) {
+			case ' ':
+			case '\t':
+			case '\r':
+			case '\n':
+				s++;
+				continue;
+			default:
+				break;
+		}
+		break;
+	}
+
+	return s;
+}
+
+static const char *
+copy_key(const char *buff, char *key, size_t len)
+{
+	int i;
+	const char *p;
+	for (i = 0, p = buff; *p; p++) {
+		switch (*p) {
+			case ' ':
+			case '\t':
+			case '\r':
+			case '\n':
+				break;
+			default:
+				if (i < len)
+					key[i++] = *p;
+				continue;
+		}
+		break;
+	}
+
+	if (i < len)
+		key[i] = '\0';
+	else if (len > 0)
+		key[len - 1] = '\0';
+
+	return p;
+}
+
+static const char *
+copy_escape_val(const char *buff, char *val, size_t len)
+{
+	int i;
+	const char *p;
+
+	if (*buff != '"')
+		return buff;
+	for (i = 0, p = buff + 1; *p; p++) {
+		switch (*p) {
+			case '\\':
+				p++;
+				if (*p != '\\' && \
+						*p != '"')
+					break;
+				if (i < len)
+					val[i++] = *p;
+				continue;
+			default:
+				if (*p == '"') {
+					p++;
+					break;
+				}
+				if (i < len)
+					val[i++] = *p;
+				continue;
+		}
+		break;
+	}
+
+	if (i < len)
+		val[i] = '\0';
+	else if (len > 0)
+		val[len - 1] = '\0';
+
+	return p;
+}
+
+
+static const char *
+copy_val(const char *buff, char *val, size_t len)
+{
+	int i;
+	const char *p;
+	for (i = 0, p = buff; *p; p++) {
+		switch (*p) {
+			case ' ':
+			case '\t':
+			case '\r':
+			case '\n':
+				break;
+			default:
+				if (i < len)
+					val[i++] = *p;
+				continue;
+		}
+		break;
+	}
+
+	if (i < len)
+		val[i] = '\0';
+	else if (len > 0)
+		val[len - 1] = '\0';
+
+	return p;
+}
 
 /*
  * todo: some val like "hello world" has spaces, current
  * impletement discards all spaces, that's urgly...
  */
 static int
-get_key_val(char *buff, size_t len, char *key, size_t key_len, char *val, size_t val_len)
+get_key_val(const char *buff, char *key, size_t key_len, char *val, size_t val_len)
 {
-	int i;
-	int l1 = 0, l2 = 0;
-	int has_equal = 0;
-	for (i = 0; i < len && buff[i]; i++) {
-		if (buff[i] == '=') {
-			has_equal = 1;
-			break;
-		}
-		switch (buff[i]) {
-			case ' ':
-			case '\t':
-			case '\r':
-			case '\n':
-				continue;
-			default:
-				if (l1 < key_len)
-					key[l1++] = buff[i];
-		}
-	}
-
-	/* start with '#', comment */
-	if (key[0] == '#')
+	if (key_len == 0 || val_len == 0) {
+#ifdef DEBUG
+		fprintf(stderr, "key_len:%u val_len:%u\n", key_len, val_len);
+#endif
 		return 0;
-
-	/*
-	 * check if it is empty line, or
-	 * foo, missing "=" and "bar"
-	 */
-	if (! has_equal) {
-		if (key_len == 0)
-			return -1;	/* key_len should always larger than 0 */
-		else
-			return l1 == 0 ? 0 : -1;
 	}
 
-	/* = bar , missing "foo" */
-	if (l1 == 0)
+	/* parse key */
+	buff = skip_blanks(buff);
+	switch (*buff) {
+		/* empty line */
+		case '\0':
+			/* start with '#', comment */
+		case '#':
+			return 0;
+		default:
+			buff = copy_key(buff, key, key_len);
+	}
+
+	/* parse value */
+	buff = skip_blanks(buff);
+	switch (*buff) {
+		/* foo without bar */
+		case '\0':
+		case '#':
+			return -1;
+		case '"':
+			buff = copy_escape_val(buff, val, val_len);
+			break;
+		default:
+			buff = copy_val(buff, val, val_len);
+	}
+
+	if (val[0] == '\0')
+		/* foo, missing bar */
 		return -1;
 
-	if (l1 < key_len)
-		key[l1] = '\0';
-	else if (key_len > 0)
-		key[l1 - 1] = '\0';
-
-	for (i++; i < len && buff[i]; i++) {
-		switch (buff[i]) {
-			case ' ':
-			case '\t':
-			case '\r':
-			case '\n':
-				continue;
-			default:
-				if (l2 < val_len)
-					val[l2++] = buff[i];
-		}
+	buff = skip_blanks(buff);
+	switch (*buff) {
+		case '\0':
+		case '#':
+			/* done */
+			break;
+		default:
+			return -2;
 	}
-
-	/* foo = , missing "bar", indicates use default */
-	if (l2 == 0)
-		return 0;
-
-	if (l2 < val_len)
-		val[l2] = '\0';
-	else if (val_len > 0)
-		val[l2 - 1] = '\0';
 
 	return 1;
 }
@@ -266,23 +363,32 @@ _load_conf_file(const char *fl)
 	while ((fgets(buff, sizeof(buff), fp))) {
 		line++;
 		char k[80], v[80];
-		switch (get_key_val(buff, sizeof(buff), k, sizeof(k), v, sizeof(v))) {
-			case -1:
-				/* error */
-				fprintf(stderr, "Syntax error in %s at line %d\n", \
-						fl, line);
+		switch (get_key_val(buff, k, sizeof(k), v, sizeof(v))) {
+			case -2:
+				/* error near val */
+				fprintf(stderr, "Syntax error in %s at line %d near `%s'\n", \
+						fl, line, v);
 				errcnt++;
-				break;
+				continue;
+			case -1:
+				/* error near key */
+				fprintf(stderr, "Syntax error in %s at line %d near `%s'\n", \
+						fl, line, k);
+				errcnt++;
+				continue;
 			case 0:
 				/* empty line, or comments */
-				break;
+				continue;
 			default:
 				/* get a line */
-				if (read_key_val(k, v) < 0)
-					goto DONE;
+				if (read_key_val(k, v) < 0) {
+					errcnt++;
+					break;
+				}
+				continue;
 		}
+		break;
 	}
-DONE:
 	if (fclose(fp) == EOF) {
 		fprintf(stderr, "fclose(%s): %s\n", fl, strerror(errno));
 		return 0;
@@ -475,3 +581,4 @@ print_config(void)
 	printf("send timeout:     %ld\n", (long)snd_timeout);
 	printf("receive timeout:  %ld\n", (long)rcv_timeout);
 }
+
