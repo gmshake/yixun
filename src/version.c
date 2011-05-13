@@ -5,8 +5,9 @@ void
 version(void)
 {
 	printf("%s\n", PACKAGE_STRING);
-	fputs("Homepage: http://yixun.googlecode.com\n\n", stdout);
-	fputs("Written by Summer Town.\n", stdout);
+	printf("Homepage: http://yixun.googlecode.com\n\n");
+	printf("Written by Summer Town.\n");
+	printf("Build date: " __DATE__ " " __TIME__ "\n");
 }
 
 
