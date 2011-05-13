@@ -289,8 +289,13 @@ copy_val(const char *buff, char *val, size_t len)
 }
 
 /*
- * todo: some val like "hello world" has spaces, current
- * impletement discards all spaces, that's urgly...
+ * we support these val types:
+ * 1: key val
+ * 2: key "val"
+ * 3: key "some val"
+ * 4: key " \\ \" some other "
+ * 5: key val #with comments
+ * 6: key "some val" #with comments
  */
 static int
 get_key_val(const char *buff, char *key, size_t key_len, char *val, size_t val_len)
