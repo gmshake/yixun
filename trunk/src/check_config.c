@@ -581,6 +581,7 @@ print_config(void)
 	printf("password:         %s\n", password);
 	printf("auth server ip:   %s\n", inet_ntoa(auth_server.sin_addr));
 	printf("auth server port: %u\n", ntohs(auth_server.sin_port));
+	printf("msg server ip:    %s\n", inet_ntoa(*(struct in_addr *)&msg_server));
 	printf("listen port:      %u\n", listenport);
 	printf("connect timeout:  %ld\n", (long)conn_timeout);
 	printf("send timeout:     %ld\n", (long)snd_timeout);

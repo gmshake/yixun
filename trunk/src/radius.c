@@ -100,8 +100,11 @@ static struct rds_packet_header *make_rds_packet(void *buff, enum rds_header_typ
 static void add_segment(void *buff, enum rds_segment_type type, uint8_t length, uint8_t content_len, const void *content);
 
 /* 带连接超时的connect */
-static int connect_tm(int socket, const struct sockaddr *addr, socklen_t addr_len, struct timeval *timeout);
+static int connect_tm(int socket, const struct sockaddr *addr, socklen_t addr_len, time_t timeout);
 
+static ssize_t send_tm(int socket, const void *buffer, size_t length, time_t timeout, int flags);
+
+static ssize_t recv_tm(int socket, void *buffer, size_t length, time_t timeout, int flags);
 
 /*
  * yixun_log_op(), make && send proper packet indicated by op
@@ -120,14 +123,11 @@ yixun_log_op(int op)
 	int rval = 0;
 	int sockfd = socket(AF_INET, SOCK_STREAM, 0);
 	if (sockfd < 0) {
-		log_perror("[%s] socket", __FUNCTION__);
+		log_perror("%s: socket", __FUNCTION__);
 		return -1;
 	}
-	struct timeval tv;
-	tv.tv_sec = conn_timeout;
-	tv.tv_usec = 0;
 
-	if (connect_tm(sockfd, (struct sockaddr *)&auth_server, sizeof(struct sockaddr_in), &tv) < 0) {
+	if (connect_tm(sockfd, (struct sockaddr *)&auth_server, sizeof(struct sockaddr_in), conn_timeout) < 0) {
 		log_perror("connect to %s", inet_ntoa(auth_server.sin_addr));
 		rval = -1;
 		goto ERROR;
@@ -151,7 +151,7 @@ yixun_log_op(int op)
 				uint8_t version[4] = { 0x03, 0x00, 0x00, 0x06 };	/* hack: sigh... */
 				uint8_t zeros[4] = { 0x00, 0x00, 0x00, 0x00 };
 
-				uint8_t *sec_pwd = (uint8_t *) malloc(sizeof(uint8_t) * (strlen(password) + 2));
+				uint8_t *sec_pwd = (uint8_t *) malloc((strlen(password) + 2));
 				if (sec_pwd == NULL) {
 					log_perror("%s: malloc(%u)\n", __FUNCTION__, sizeof(uint8_t) * (strlen(password) + 2));
 					rval = -1;
@@ -191,18 +191,13 @@ LOGOUT_KEEPALIVE:
 		s_buff_len = RDS_PACKET_LEN(s_buff);
 		last_op = op;
 	}
-	tv.tv_sec = snd_timeout;
-	tv.tv_usec = 0;
-	if (setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) < 0) {
-		log_perror("%s: setsockopt(SO_SNDTIMEO)", __FUNCTION__);
-		rval = -3;
-		goto ERROR;
-	}
-	if (send(sockfd, s_buff, s_buff_len, 0) < 0) {
+
+	if (send_tm(sockfd, s_buff, s_buff_len, snd_timeout, 0) < 0) {
 		log_perror("%s: send to %s", __FUNCTION__, inet_ntoa(auth_server.sin_addr));
 		rval = -1;
 		goto ERROR;
 	}
+
 	switch (op) {
 		case LOGIN:
 		{
@@ -212,18 +207,10 @@ LOGOUT_KEEPALIVE:
 			log_info("address of r_buff is %p\n", &r_buff);
 #endif
 
-			tv.tv_sec = rcv_timeout;
-			tv.tv_usec = 0;
-			if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
-				log_perror("[%s] setsockopt", __FUNCTION__);
-				rval = -3;
-				goto ERROR;
-			}
-			ssize_t ret = recv(sockfd, r_buff, R_BUF_LEN, 0);
+			ssize_t ret = recv_tm(sockfd, r_buff, R_BUF_LEN, rcv_timeout, 0);
 			if (ret <= 0) {
 				if (ret == 0) {
-					log_err("[%s] receive: Auth server %s \
-								has closed its half side of the connection\n", __FUNCTION__, inet_ntoa(auth_server.sin_addr));
+					log_err("[%s] receive: Auth server %s has closed its half side of the connection\n", __FUNCTION__, inet_ntoa(auth_server.sin_addr));
 				} else {
 					if (errno == EAGAIN)
 						log_err("[%s] recv: time out\n", __FUNCTION__);
@@ -372,7 +359,7 @@ act_on_info(void *buff, int sockfd)
 
 			BUFF_ALIGNED(packet, sizeof(struct rds_packet_header));
 			make_rds_packet(packet, u_ack);
-			if (send(sockfd, packet, sizeof(struct rds_packet_header), 0) < 0) {
+			if (send_tm(sockfd, packet, sizeof(struct rds_packet_header), snd_timeout, 0) < 0) {
 				log_perror("[%s] send", __FUNCTION__);
 				stop_listen();
 				return -1;
@@ -597,7 +584,7 @@ add_segment(void *buff, enum rds_segment_type type, uint8_t length, uint8_t cont
  * on success, return 0, otherwise return -1
  */
 static int
-connect_tm(int socket, const struct sockaddr *addr, socklen_t addr_len, struct timeval *timeout)
+connect_tm(int socket, const struct sockaddr *addr, socklen_t addr_len, time_t timeout)
 {
 	int rval;
 	int sock_flag;
@@ -621,8 +608,8 @@ connect_tm(int socket, const struct sockaddr *addr, socklen_t addr_len, struct t
 	if (rval < 0) {
 		if (errno == EINPROGRESS) {
 			do {
-				tv.tv_sec = timeout->tv_sec;
-				tv.tv_usec = timeout->tv_usec;
+				tv.tv_sec = timeout;
+				tv.tv_usec = 0;
 				FD_ZERO(&fd);
 				FD_SET(socket, &fd);
 				rval = select(socket + 1, NULL, &fd, NULL, &tv);
@@ -661,3 +648,39 @@ connect_tm(int socket, const struct sockaddr *addr, socklen_t addr_len, struct t
 	}
 	return 0;
 }
+
+/*
+ * send with timeout
+ * wrapper for send(), add timeout option
+ */
+static ssize_t
+send_tm(int socket, const void *buffer, size_t length, time_t timeout, int flags)
+{
+	struct timeval tv;
+	tv.tv_sec = timeout;
+	tv.tv_usec = 0;
+
+	if (setsockopt(socket, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) < 0)
+		return -1;
+
+	return send(socket, buffer, length, flags);
+}
+
+
+/*
+ * receive with timeout
+ * wrapper for recv(), add timeout option
+ */
+static ssize_t
+recv_tm(int socket, void *buffer, size_t length, time_t timeout, int flags)
+{
+	struct timeval tv;
+	tv.tv_sec = timeout;
+	tv.tv_usec = 0;
+
+	if (setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
+		return -1;
+
+	return recv(socket, buffer, length, flags);
+}
+
