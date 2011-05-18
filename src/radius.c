@@ -39,15 +39,13 @@
 #include "get_ip_mac.h"
 #include "radius.h"
 #include "server.h"
+#include "defconfig.h"
 #include "common_macro.h"
 
 #ifdef DEBUG
 #include "hexdump.h"
 #endif
 
-#ifndef MAX_USER_NAME_LEN
-#define MAX_USER_NAME_LEN 20
-#endif
 #ifndef MAX_CLIENT
 #define MAX_CLIENT 10
 #endif
@@ -56,9 +54,6 @@
 #endif
 #ifndef S_BUF_LEN
 #define S_BUF_LEN 512
-#endif
-#ifndef SEGMENT_MAX_LEN
-#define SEGMENT_MAX_LEN 256
 #endif
 
 enum login_state login_state = offline;
@@ -80,7 +75,7 @@ uint32_t gre_download_band;
 
 static size_t s_buff_len;
 static char s_buff[S_BUF_LEN];
-static char server_info[SEGMENT_MAX_LEN + (SEGMENT_MAX_LEN >> 1)];
+static char server_info[ATTR_MAX_LEN + (ATTR_MAX_LEN >> 1)];
 
 void print_server_config(void);
 
@@ -94,10 +89,10 @@ int act_on_info(void *buff, int sockfd);
 static int get_parameters(const void *buff);
 
 /* 生成一个发送包（包头） */
-static struct rds_packet_header *make_rds_packet(void *buff, enum rds_header_type type);
+static struct rds_packet_header *make_rds_packet(void *buff, enum rds_type type);
 
-/* 为发送包添加相应字段 */
-static void add_segment(void *buff, enum rds_segment_type type, uint8_t length, uint8_t content_len, const void *content);
+/* 为发送包添加相应属性字段 */
+static void add_attr(void *buff, enum rds_attr_type type, uint8_t length, uint8_t content_len, const void *content);
 
 /* 带连接超时的connect */
 static int connect_tm(int socket, const struct sockaddr *addr, socklen_t addr_len, time_t timeout);
@@ -159,27 +154,27 @@ yixun_log_op(int op)
 				}
 				encode_pwd_with_ip(sec_pwd, password, gre_src);
 
-				make_rds_packet(s_buff, u_login);
-				add_segment(s_buff, c_mac, 6, sizeof(eth_addr), (char *)eth_addr);
-				add_segment(s_buff, c_ip, sizeof(in_addr_t), sizeof(in_addr_t), (char *)&gre_src);
+				make_rds_packet(s_buff, u_req);
+				add_attr(s_buff, c_mac, 6, sizeof(eth_addr), (char *)eth_addr);
+				add_attr(s_buff, c_ip, sizeof(in_addr_t), sizeof(in_addr_t), (char *)&gre_src);
 				/* Hack:用户名有长度限制 */
-				add_segment(s_buff, c_user, MAX_USER_NAME_LEN, strlen(username), (char *)username);
-				add_segment(s_buff, c_pwd, strlen((char *)sec_pwd), strlen((char *)sec_pwd), (char *)sec_pwd);
-				add_segment(s_buff, c_ver, 4, sizeof(version), (char *)version);
-				add_segment(s_buff, c_pad, 4, sizeof(zeros), (char *)zeros);
+				add_attr(s_buff, c_user, MAX_USER_NAME_LEN, strlen(username), (char *)username);
+				add_attr(s_buff, c_pwd, strlen((char *)sec_pwd), strlen((char *)sec_pwd), (char *)sec_pwd);
+				add_attr(s_buff, c_ver, 4, sizeof(version), (char *)version);
+				add_attr(s_buff, c_pad, 4, sizeof(zeros), (char *)zeros);
 
 				free(sec_pwd);
 				break;
 			}
 			case LOGOUT:
 				/* Hack:退出登录和保持活动连接只有packet_type有差别 */
-				make_rds_packet(s_buff, u_logout);
+				make_rds_packet(s_buff, u_stp);
 				goto LOGOUT_KEEPALIVE;
 			case KEEPALIVE:
 				make_rds_packet(s_buff, u_keepalive);
 LOGOUT_KEEPALIVE:
-				add_segment(s_buff, c_ip, sizeof(in_addr_t), sizeof(in_addr_t), (char *)&gre_src);
-				add_segment(s_buff, c_user, MAX_USER_NAME_LEN, strlen(username), (char *)username);
+				add_attr(s_buff, c_ip, sizeof(in_addr_t), sizeof(in_addr_t), (char *)&gre_src);
+				add_attr(s_buff, c_user, MAX_USER_NAME_LEN, strlen(username), (char *)username);
 				break;
 			default:
 #ifdef DEBUG
@@ -343,45 +338,42 @@ act_on_info(void *buff, int sockfd)
 		log_warning("[%s] buffer(%p) is not aligned to %d bytes\n", __FUNCTION__, buff, sizeof(int));
 #endif
 	struct rds_packet_header *hd = (struct rds_packet_header *)buff;
-	if (hd->flag != RADIUS_HEADER_FLAG) {
-		log_err("Error: Invalid server package flag:0x%02x\n", hd->flag);
+	if (hd->vendor != VENDOR_YIXUN) {
+		log_err("Unknown vendor:0x%02x\n", hd->vendor);
 #ifdef DEBUG
 		hexdump(buff, 32);
 #endif
 		return -1;
 	}
 	switch (hd->type) {
-		case s_accept:
+		case s_ack:
 		{
 			log_info("Server accepted...\n");
-			if (start_listen() < 0)
-				return -1;
-
-			BUFF_ALIGNED(packet, sizeof(struct rds_packet_header));
-			make_rds_packet(packet, u_ack);
-			if (send_tm(sockfd, packet, sizeof(struct rds_packet_header), snd_timeout, 0) < 0) {
-				log_perror("[%s] send", __FUNCTION__);
-				stop_listen();
-				return -1;
-			}
-			wait_msg();
 
 			if (get_parameters(buff) < 0) {
-				log_err("[%s] Cannot get parameters\n", __FUNCTION__);
-				stop_listen();
+				log_err("%s: Cannot get parameters\n", __FUNCTION__);
 				return -1;
 			}
 			if (gre_timeout > heart_beat_timeout) {
 				log_notice("Server side timeout is too long:%u, use %u instead\n", gre_timeout, heart_beat_timeout);
 				gre_timeout = heart_beat_timeout;
 			}
+
+			if (start_listen() < 0)
+				return -1;
+
+			BUFF_ALIGNED(packet, sizeof(struct rds_packet_header));
+			make_rds_packet(packet, u_ack);
+			if (send_tm(sockfd, packet, sizeof(struct rds_packet_header), snd_timeout, 0) < 0) {
+				log_perror("%s: send()", __FUNCTION__);
+				stop_listen();
+				return -1;
+			}
+			wait_msg();
+
 			break;
 		}
-		case s_info:
-			get_parameters(buff);
-			log_info(server_info);
-			break;
-		case s_error:
+		case s_rej:
 		{
 			int rval = get_parameters(buff);
 			log_err(server_info);
@@ -390,8 +382,12 @@ act_on_info(void *buff, int sockfd)
 		case s_keepalive:
 			log_warning("server send keepalive\n  Keep-alive thread fail???\n");
 			break;
+		case s_msg:
+			get_parameters(buff);
+			log_info(server_info);
+			break;
 		default:
-			log_err("[%s] Unkown msg type: 0x%02x\n", __FUNCTION__, hd->type);
+			log_err("%s: Unkown attribute type: 0x%02x\n", __FUNCTION__, hd->type);
 			break;
 	}
 	return 0;
@@ -416,14 +412,14 @@ get_parameters(const void *buff)
 		log_warning("[%s] buffer(%p) is not aligned to %d bytes\n", __FUNCTION__, buff, sizeof(int));
 #endif
 	struct rds_packet_header *hd = (struct rds_packet_header *)buff;
-	buff = hd->extra;	/* first segment */
+	buff = hd->extra;	/* first attribute */
 
-	/* the end of segment */
+	/* the end of attributes */
 	const void *end = buff + ntohs(hd->length);
 	while (buff < end) {
-		const struct rds_segment *p = (const struct rds_segment *)buff;
-		if (p->flag != SERVER_SEGMENT_FLAG) {
-			log_err("[%s] Invalid segment flag:0x%02x\n", __FUNCTION__, p->flag);
+		const struct rds_attr *p = (const struct rds_attr *)buff;
+		if (p->flag != SERVER_ATTR_FLAG) {
+			log_err("%s: Invalid attribute flag:0x%02x\n", __FUNCTION__, p->flag);
 #ifdef DEBUG
 			hexdump(p, 64);
 #endif
@@ -434,7 +430,7 @@ get_parameters(const void *buff)
 		     p->type == s_gre_l ||
 		     p->type == s_gre_r ||
 		     p->type == s_timeout || p->type == s_mask || p->type == s_upband || p->type == s_downband) && (size_t) & p->content % sizeof(int) != 0)
-			log_warning("[%s] line:%d buffer(%p) is not aligned to %d bytes\n", __FUNCTION__, __LINE__, &p->content, sizeof(int));
+			log_warning("%s: line:%d buffer(%p) is not aligned to %d bytes\n", __FUNCTION__, __LINE__, &p->content, sizeof(int));
 #endif
 		switch (p->type) {
 			case s_gre_d:
@@ -454,6 +450,7 @@ get_parameters(const void *buff)
 				gre_timeout = ntohl(*((uint32_t *) p->content));
 				break;
 			case s_rule:
+				/* on BSD/OSX/Linux, these rules are not needed */
 #ifdef DEBUG
 				hexdump(p, 64);
 #endif
@@ -472,8 +469,8 @@ get_parameters(const void *buff)
 			case s_sinfo:
 			{
 				bzero(server_info, sizeof(server_info));
-				size_t len = p->length - sizeof(struct rds_segment) < sizeof(server_info) ?
-				    p->length - sizeof(struct rds_segment) - 2 : sizeof(server_info) - 2;
+				size_t len = p->length - sizeof(struct rds_attr) < sizeof(server_info) ?
+				    p->length - sizeof(struct rds_attr) - 2 : sizeof(server_info) - 2;
 
 				convert_code("GB18030", "UTF-8",
 							p->content, strlen(p->content),
@@ -491,7 +488,7 @@ get_parameters(const void *buff)
 			}
 			default:
 #ifdef DEBUG
-				fprintf(stderr, "%s: Unkown segment type:0x%02x\n", __FUNCTION__, p->type);
+				fprintf(stderr, "%s: Unkown attribute type:0x%02x\n", __FUNCTION__, p->type);
 #endif
 				break;
 		}
@@ -503,13 +500,13 @@ get_parameters(const void *buff)
 /*
  * make_rds_packet(), fill packet with necessary infomation, ie packet_flag, packet_type and zeros
  * @param packet, packet buffer
- * @param type, which rds_segment_type
- * @param length, extra content length, the segment len is length + sizeof(struct rds_segment)
+ * @param type, which rds_attr_type
+ * @param length, extra content length, the attribute len is length + sizeof(struct rds_attr)
  * @param content_len, real content length. if content_len is larger than length, copy length data at most
  * @param content, data to be copied
  */
 static struct rds_packet_header *
-make_rds_packet(void *buff, enum rds_header_type type)
+make_rds_packet(void *buff, enum rds_type type)
 {
 	/*
 	 * hack: due to problem caused by memory alignment, we sugguest that buff
@@ -522,7 +519,7 @@ make_rds_packet(void *buff, enum rds_header_type type)
 		log_warning("[%s] buffer(%p) is not aligned to %d bytes\n", __FUNCTION__, buff, sizeof(int));
 #endif
 	struct rds_packet_header *p = (struct rds_packet_header *)buff;
-	p->flag = RADIUS_HEADER_FLAG;	/* Always be 0x5f */
+	p->vendor = VENDOR_YIXUN;
 	p->type = (uint8_t) type;
 	p->pad = 0;
 	return p;
@@ -530,15 +527,15 @@ make_rds_packet(void *buff, enum rds_header_type type)
 
 
 /*
- * add_segment(), add extra data to rds_packet
+ * add_attr(), add extra data to rds_packet
  * @param packet, packet buffer
- * @param type, which rds_segment_type
- * @param length, extra content length, the segment len is length + sizeof(struct rds_segment)
+ * @param type, which rds_attr_type
+ * @param length, extra content length, the attribute len is length + sizeof(struct rds_attr)
  * @param content_len, real content length. if content_len is larger than length, copy length data at most
  * @param content, data to be copied, NULL indicates skip length packet, ie, leave length packet unchanged
  */
 static void
-add_segment(void *buff, enum rds_segment_type type, uint8_t length, uint8_t content_len, const void *content)
+add_attr(void *buff, enum rds_attr_type type, uint8_t length, uint8_t content_len, const void *content)
 {
 	/*
 	 * hack: due to problem caused by memory alignment, we sugguest that buff
@@ -551,16 +548,14 @@ add_segment(void *buff, enum rds_segment_type type, uint8_t length, uint8_t cont
 		log_warning("[%s] buffer(%p) is not aligned to %d bytes\n", __FUNCTION__, buff, sizeof(int));
 #endif
 	struct rds_packet_header *p = (struct rds_packet_header *)buff;
-	struct rds_segment *s = (struct rds_segment *)(p->extra + ntohs(p->length));
-	/* bzero(&s, sizeof(struct rds_segment)); */
+	struct rds_attr *s = (struct rds_attr *)(p->extra + ntohs(p->length));
 
-	if (length + sizeof(struct rds_segment) > SEGMENT_MAX_LEN)
-		length = SEGMENT_MAX_LEN - sizeof(struct rds_segment);
+	if ((size_t)length + sizeof(struct rds_attr) > ATTR_MAX_LEN)
+		length = ATTR_MAX_LEN - sizeof(struct rds_attr);
 
-	s->flag = CLINET_SEGMENT_FLAG;
+	s->flag = CLINET_ATTR_FLAG;
 	s->type = type;
-	/* 包含segment头的长度 */
-	s->length = length + sizeof(struct rds_segment);
+	s->length = length + sizeof(struct rds_attr);
 	s->pad = 0;
 
 	if (content_len > length)
