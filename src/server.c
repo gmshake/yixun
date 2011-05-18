@@ -105,8 +105,8 @@ wait_msg(void)
 				log_perror("%s: select()", __FUNCTION__);
 			return 0;
 		case 0:
-			if (select_timeout < 10)
-				select_timeout++;
+			if (select_timeout < 16)
+				select_timeout <<= 1;
 			return 0;
 		default:
 			if (! FD_ISSET(sock_listen, &rfds))
@@ -124,15 +124,12 @@ wait_msg(void)
 		return -1;
 	}
 
-	/* 当对方的IP地址不在接入服务器IP地址段时断开连接（防止攻击） */
-	if ((ntohl(r_client.sin_addr.s_addr) ^ ntohl(auth_server.sin_addr.s_addr)) >> (32 - auth_server_maskbits) != 0) {
+	if (msg_server != 0 && msg_server != r_client.sin_addr.s_addr) {
 		log_notice("%s: %s attempt to connect\n", \
 				__FUNCTION__, inet_ntoa(r_client.sin_addr));
 		close(sock_client);
 		return 0;
 	}
-	if (msg_server == 0)
-		msg_server = r_client.sin_addr.s_addr;
 
 	log_info("%s: accept: %s\n", __FUNCTION__, inet_ntoa(r_client.sin_addr));
 
@@ -157,6 +154,7 @@ wait_msg(void)
 			return 0;
 	}
 
+	close(sock_client);
 	return -1;
 }
 

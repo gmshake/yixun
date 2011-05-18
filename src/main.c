@@ -48,9 +48,6 @@ static bool connected = false;
 
 static in_addr_t default_route = 0;
 
-//static int extr_argc;
-//static char *const *extr_argv;
-
 static int start_login(void);
 static void handle_signals(int sig);
 static int quit_daemon(void);
