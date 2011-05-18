@@ -59,7 +59,7 @@
 
 //与认证服务器保持连接超时时间，单位，秒
 #ifndef HEART_BEAT_TIMEOUT
-#define HEART_BEAT_TIMEOUT 60
+#define HEART_BEAT_TIMEOUT 180
 #endif
 
 #endif	/* DEFCONFIG_H */
