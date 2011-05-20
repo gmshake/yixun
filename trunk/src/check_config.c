@@ -529,6 +529,8 @@ check_config(void)
 		return -1;
 	}
 
+	msg_server = inet_addr(msgserver);
+
 	if (conn_timeout < 1) {
 		log_err("connect timeout too short:%u\n", conn_timeout);
 		return -1;
