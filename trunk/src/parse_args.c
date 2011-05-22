@@ -25,14 +25,16 @@ const char *arg_password;
 const char *arg_authserver;
 const char *arg_regip;
 const char *arg_hwaddr;
+const char *arg_dev;
 
 const static struct option opts[] = {
 	{"config",		required_argument,	NULL,	'f'},
 	{"username",	required_argument,	NULL,	'u'},
 	{"password",	required_argument,	NULL,	'p'},
-	{"server-ip",	required_argument,	NULL,	's'},
-	{"client-ip",	required_argument,	NULL,	'c'},
-	{"mac-addr",	required_argument,	NULL,	'm'},
+	{"server",		required_argument,	NULL,	's'},
+	{"reg-ip",		required_argument,	NULL,	'i'},
+	{"reg-mac",		required_argument,	NULL,	'm'},
+	{"device",		required_argument,	NULL,	'd'},
 	{"no-daemon",	no_argument,		NULL,	'D'},
 	{"verbose",		no_argument,		NULL,	'V'},
 	{"version",		no_argument,		NULL,	'v'},
@@ -48,7 +50,7 @@ void
 parse_args(int argc, char *const argv[])
 {
 	int ch;
-	while ((ch = getopt_long(argc, argv, "u:p:i:m:f:ADTVtvqxh", opts, NULL)) != -1) {
+	while ((ch = getopt_long(argc, argv, "u:p:s:i:m:f:d:ADTVtvqxh", opts, NULL)) != -1) {
 		switch (ch) {
 			case 'u':
 				arg_username = optarg;
@@ -67,6 +69,9 @@ parse_args(int argc, char *const argv[])
 				break;
 			case 'f':
 				arg_conf_file = optarg;
+				break;
+			case 'd':
+				arg_dev = optarg;
 				break;
 			case 'A':
 				flag_changeroute = true;

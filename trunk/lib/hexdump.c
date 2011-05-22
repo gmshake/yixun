@@ -43,7 +43,7 @@ hexdump(const void *data, size_t len)
 	size_t bufflen = sizeof(char) * (len * 3 + len / 16 + 1);
 	char *buff = (char *)malloc(bufflen);
 	if (buff == NULL) {
-		perror("Error:[print_hex] malloc");
+		perror("Error: hexdump() malloc");
 		return;
 	}
 

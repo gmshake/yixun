@@ -81,8 +81,8 @@ gre_find_unused_tunnel(char *ifname)
 	}
 
 	struct ifreq ifr;
-	bzero(ifname, IFNAMSIZ);
 #if defined(__APPLE__) || defined(__FreeBSD__)
+	bzero(ifname, IFNAMSIZ);
 	struct if_nameindex *p, *ifn = if_nameindex();
 	for (p = ifn; p->if_index && p->if_name; p++) {
 		if (strncmp(p->if_name, "gre", 3))
@@ -124,9 +124,12 @@ gre_find_unused_tunnel(char *ifname)
 	 * tunnel, we delete it and then try to re-create it in gre_set_tunnel()
 	 */
 
-	strncpy(ifr.ifr_name, GRENAME, sizeof(ifr.ifr_name));
+	if (ifname[0] == '\0')
+		strlcpy(ifname, GRENAME, IFNAMSIZ);
+
+	strncpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name));
 	if (ioctl(fd, SIOCGIFHWADDR, &ifr) < 0)
-		goto DONE;
+		goto DONE; /* ifname not used yet */
 	if (ifr.ifr_addr.sa_family != ARPHRD_IPGRE)
 		goto NOTFOUND;
 	if (ioctl(fd, SIOCGIFFLAGS, &ifr) == 0) {
@@ -139,15 +142,16 @@ gre_find_unused_tunnel(char *ifname)
 			if (ioctl(fd, SIOCDELTUNNEL, &ifr) < 0) {
 				fprintf(stderr, "%s ioctl(SIOCDELTUNNEL):%s\n", \
 						__FUNCTION__, strerror(errno));
+				bzero(ifname, IFNAMSIZ);
 				goto NOTFOUND;
 			}
 		}
 	}
+	goto DONE;
 
-DONE:
-	strlcpy(ifname, GRENAME, IFNAMSIZ);
 NOTFOUND:
-
+	bzero(ifname, IFNAMSIZ);
+DONE:
 #else
 #error Target OS not supported yet!
 #endif

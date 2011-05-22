@@ -21,12 +21,14 @@ usage(int status)
                       username to authorise\n\
     -p PASSWORD, --password=PASSWORD\n\
                       password to authorise\n\
-    -s SERVERIP, --server-ip=SERVERIP\n\
+    -s SERVERIP, --server=SERVERIP\n\
                       Auth server IP\n\
-    -c CLIENTIP, --client-ip=CLIENTIP\n\
-                      Use CLIENTIP to authorise\n\
-    -m MACADDR,  --mac-addr=MACADDR\n\
-                      Use MACADDR to authorise\n\
+    -i REGIP,    --reg-ip=REGIP\n\
+                      Use REGIP to authorise\n\
+    -m REGMAC,   --reg-mac=REGMAC\n\
+                      Use REGMAC to authorise\n\
+    -d DEVICE,   --device=DEVICE\n\
+                      Setup DEVICE as tunnel(works only on linux. oops...)\n\
     -D, --no-daemon   Does not become a daemon\n\
     -V, --verbose     Verbose mode. show extra infomation\n\
     -q, --quiet       Quiet mode. Nothing is sent to the system log.\n\
