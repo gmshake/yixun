@@ -1,22 +1,25 @@
 #include <sys/socket.h>	/* struct sockaddr */
 #include <stdio.h>
+#include <string.h>
 #include <stdbool.h>
 
 #include <netinet/in.h>
 #include <net/if.h>		/* IFNAMSIZ */
 
+#include "sys.h"
 #include "gre_module.h"
 #include "gre_tunnel.h"
 #include "route_op.h"
 #include "radius.h"
 
 extern bool flag_changeroute;
+extern const char *arg_dev;
 
 static char tunnel[IFNAMSIZ];
 static bool flag_tunnel_isset = false;
 
 int
-set_tunnel(void)
+set_tunnel()
 {
 	/*
 	 *  load needed module
@@ -32,12 +35,18 @@ set_tunnel(void)
 				gre_dst, \
 				gre_local, \
 				gre_remote) == 0) {
-		fprintf(stderr, "tunnel already exists\n");
+		fprintf(stderr, "tunnel already exists: %s\n", tunnel);
 		return 0;
 	}
 
+	if (arg_dev)
+		strlcpy(tunnel, arg_dev, sizeof(tunnel));
+
 	if (gre_find_unused_tunnel(tunnel) < 0) {
-		fprintf(stderr, "unable to find unused gre interface.\n");
+		if (arg_dev)
+			fprintf(stderr, "tunnel %s unavailable.\n", arg_dev);
+		else
+			fprintf(stderr, "unable to find unused gre interface.\n");
 		return -1;
 	}
 
