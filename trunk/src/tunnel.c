@@ -19,7 +19,7 @@ static char tunnel[IFNAMSIZ];
 static bool flag_tunnel_isset = false;
 
 int
-set_tunnel()
+set_tunnel(void)
 {
 	/*
 	 *  load needed module

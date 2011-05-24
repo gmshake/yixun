@@ -142,7 +142,6 @@ gre_find_unused_tunnel(char *ifname)
 			if (ioctl(fd, SIOCDELTUNNEL, &ifr) < 0) {
 				fprintf(stderr, "%s ioctl(SIOCDELTUNNEL):%s\n", \
 						__FUNCTION__, strerror(errno));
-				bzero(ifname, IFNAMSIZ);
 				goto NOTFOUND;
 			}
 		}
