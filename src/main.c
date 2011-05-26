@@ -33,8 +33,7 @@
 
 #define LOCKFILE "/var/run/yixun.pid"
 
-static int lockfd;		/* lockfile file description */
-
+const char *pidfile = LOCKFILE;
 bool flag_changeroute = false;
 bool flag_daemon = true;
 bool flag_test = false;
@@ -43,6 +42,7 @@ bool flag_verbose = false;
 bool flag_quiet = false;
 bool flag_exit = false;
 
+static int lockfd;		/* lockfile file description */
 static bool log_opened = false;
 static bool connected = false;
 
@@ -89,7 +89,7 @@ main(int argc, char *const argv[])
 	}
 
 	/* try to lock */
-	if (flag_daemon && (lockfd = open_lock_file(LOCKFILE)) < 0)
+	if (flag_daemon && (lockfd = open_lock_file(pidfile)) < 0)
 		return EXIT_FAILURE;
 
 	if (atexit(cleanup) < 0) {
@@ -166,9 +166,9 @@ start_login(void)
 int
 quit_daemon(void)
 {
-	int fd = open(LOCKFILE, O_RDONLY);
+	int fd = open(pidfile, O_RDONLY);
 	if (fd < 0) {
-		log_perror("%s: open(%s)", __FUNCTION__, LOCKFILE);
+		log_perror("%s: open(%s)", __FUNCTION__, pidfile);
 		return -1;
 	}
 	/* A running daemon won't let us succeed in locking fd exclusively */

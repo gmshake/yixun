@@ -29,6 +29,8 @@ usage(int status)
                       Use REGMAC to authorise\n\
     -d DEVICE,   --device=DEVICE\n\
                       Setup DEVICE as tunnel(works only on linux. oops...)\n\
+    -P PIDFILE,  --pidfile=PIDFILE\n\
+                      Create pid file PIDFILE (default /var/run/yixun.pid)\n\
     -D, --no-daemon   Does not become a daemon\n\
     -V, --verbose     Verbose mode. show extra infomation\n\
     -q, --quiet       Quiet mode. Nothing is sent to the system log.\n\
