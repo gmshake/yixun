@@ -7,6 +7,7 @@
 #include "yixun_config.h"
 #include "check_config.h"
 
+extern const char *pidfile;
 extern bool flag_changeroute;
 extern bool flag_daemon;
 extern bool flag_test;
@@ -14,7 +15,6 @@ extern bool flag_etest;
 extern bool flag_verbose;
 extern bool flag_quiet;
 extern bool flag_exit;
-
 
 extern void usage(int status);
 extern void version(void);
@@ -35,6 +35,7 @@ const static struct option opts[] = {
 	{"reg-ip",		required_argument,	NULL,	'i'},
 	{"reg-mac",		required_argument,	NULL,	'm'},
 	{"device",		required_argument,	NULL,	'd'},
+	{"pidfile",		required_argument,	NULL,	'P'},
 	{"no-daemon",	no_argument,		NULL,	'D'},
 	{"verbose",		no_argument,		NULL,	'V'},
 	{"version",		no_argument,		NULL,	'v'},
@@ -50,7 +51,7 @@ void
 parse_args(int argc, char *const argv[])
 {
 	int ch;
-	while ((ch = getopt_long(argc, argv, "u:p:s:i:m:f:d:ADTVtvqxh", opts, NULL)) != -1) {
+	while ((ch = getopt_long(argc, argv, "u:p:s:i:m:f:d:P:ADTVtvqxh", opts, NULL)) != -1) {
 		switch (ch) {
 			case 'u':
 				arg_username = optarg;
@@ -72,6 +73,9 @@ parse_args(int argc, char *const argv[])
 				break;
 			case 'd':
 				arg_dev = optarg;
+				break;
+			case 'P':
+				pidfile = optarg;
 				break;
 			case 'A':
 				flag_changeroute = true;
