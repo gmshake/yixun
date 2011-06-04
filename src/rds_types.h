@@ -72,8 +72,8 @@ enum rds_attr_type {	/* radius attribute type */
 	s_pad = 0x0b,		/* zeros */
 	// unused, 0x0c
 	// unused, 0x0d
-	s_upband = 0x0e,	/* upload band, not tested yet... */
-	s_downband = 0x0f,	/* download band, not tested yet... */
+	s_downband = 0x0e,	/* download band */
+	s_upband = 0x0f,	/* upload band */
 	s_sinfo = 0x15,		/* server info */
 };
 
