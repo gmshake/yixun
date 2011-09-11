@@ -582,9 +582,6 @@ connect_tm(int socket, const struct sockaddr *addr, socklen_t addr_len, time_t t
 {
 	int rval;
 	int sock_flag;
-	int sock_err;
-	struct timeval tv;
-	fd_set fd;
 
 	int sock_is_blocking = 0;
 
@@ -600,44 +597,51 @@ connect_tm(int socket, const struct sockaddr *addr, socklen_t addr_len, time_t t
 	/* connect */
 	rval = connect(socket, addr, addr_len);
 	if (rval < 0) {
-		if (errno == EINPROGRESS) {
-			do {
-				tv.tv_sec = timeout;
-				tv.tv_usec = 0;
-				FD_ZERO(&fd);
-				FD_SET(socket, &fd);
-				rval = select(socket + 1, NULL, &fd, NULL, &tv);
-				if (rval == 0) {
-					/* time limit expires */
-					dprintf("%s: Timeout in select() - Cancelling!\n", __FUNCTION__);
-					errno = ETIMEDOUT;
-					return -1;
-				} else if (rval > 0) {
-					/* Socket selected for write */
-					socklen_t len = sizeof(int);
-					if (getsockopt(socket, SOL_SOCKET, SO_ERROR, (void *)(&sock_err), &len) < 0) {
-						dprintf("%s: Error getsockopt() %d - %s\n", __FUNCTION__, errno, strerror(errno));
-						return -1;
-					}
-					/* Check the value returned... */
-					if (sock_err) {
-						dprintf("%s: Error in delayed connection() %d - %s\n", __FUNCTION__, sock_err, strerror(sock_err));
-						errno = sock_err;
-						return -1;
-					}
-					break;
-				} else if (errno != EINTR) {
-					/* -1, an error occurred */
-					dprintf("%s: Error connecting %d - %s\n", __FUNCTION__, errno, strerror(errno));
-					return -1;
-				}
-			} while (1);
-		} else {
+		if (errno != EINPROGRESS) {
 			dprintf("%s: Error connecting %d - %s\n", __FUNCTION__, errno, strerror(errno));
 			return -1;
 		}
+
+		/* errno == EINPROGRESS */
+		do {
+			int sock_err;
+			struct timeval tv;
+			fd_set fd;
+
+			tv.tv_sec = timeout;
+			tv.tv_usec = 0;
+			FD_ZERO(&fd);
+			FD_SET(socket, &fd);
+
+			rval = select(socket + 1, NULL, &fd, NULL, &tv);
+			if (rval > 0) {
+				/* Socket selected for write */
+				socklen_t len = sizeof(int);
+				if (getsockopt(socket, SOL_SOCKET, SO_ERROR, (void *)(&sock_err), &len) < 0) {
+					dprintf("%s: Error getsockopt() %d - %s\n", __FUNCTION__, errno, strerror(errno));
+					return -1;
+				}
+				/* Check detailed sock error info... */
+				if (sock_err) {
+					dprintf("%s: Error in delayed connection() %d - %s\n", __FUNCTION__, sock_err, strerror(sock_err));
+					errno = sock_err;
+					return -1;
+				}
+				break;
+			} else if (rval == 0) {
+				/* time limit expires */
+				dprintf("%s: Timeout in select() - Cancelling!\n", __FUNCTION__);
+				errno = ETIMEDOUT;
+				return -1;
+			} else if (errno != EINTR) {
+				/* -1, an error occurred */
+				dprintf("%s: Error connecting %d - %s\n", __FUNCTION__, errno, strerror(errno));
+				return -1;
+			}
+		} while (1);
 	}
-	/* Set to blocking mode, if the socket is blocking mode before */
+
+	/* Set back the blocking mode of the socket */
 	if (sock_is_blocking) {
 		sock_flag &= (~O_NONBLOCK);
 		if (fcntl(socket, F_SETFL, sock_flag) < 0)
