@@ -28,8 +28,10 @@ write_pid(int fd)
 		log_perror("%s: unable to ftruncate()", __FUNCTION__);
 		return -1;
 	}
+
+	/* long(size_t, int64_t) is not long than 19 DEC nums */
 	char buff[32];
-	snprintf(buff, sizeof(buff), "%ld", (long)getpid());
+	snprintf(buff, sizeof(buff), "%ld\n", (long)getpid());
 
 	if (write(fd, buff, strlen(buff)) < 0) {
 		log_perror("%s: write()", __FUNCTION__);

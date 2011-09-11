@@ -7,6 +7,7 @@ extern const char *arg_password;
 extern const char *arg_authserver;
 extern const char *arg_regip;
 extern const char *arg_hwaddr;
+extern const char *arg_retry;
 
 extern void parse_args(int argc, char *const argv[]);
 

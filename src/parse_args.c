@@ -26,6 +26,7 @@ const char *arg_authserver;
 const char *arg_regip;
 const char *arg_hwaddr;
 const char *arg_dev;
+const char *arg_retry;
 
 const static struct option opts[] = {
 	{"config",		required_argument,	NULL,	'f'},
@@ -35,6 +36,7 @@ const static struct option opts[] = {
 	{"reg-ip",		required_argument,	NULL,	'i'},
 	{"reg-mac",		required_argument,	NULL,	'm'},
 	{"device",		required_argument,	NULL,	'd'},
+	{"retry",		required_argument,	NULL,	'r'},
 	{"pidfile",		required_argument,	NULL,	'P'},
 	{"no-daemon",	no_argument,		NULL,	'D'},
 	{"verbose",		no_argument,		NULL,	'V'},
@@ -51,7 +53,7 @@ void
 parse_args(int argc, char *const argv[])
 {
 	int ch;
-	while ((ch = getopt_long(argc, argv, "u:p:s:i:m:f:d:P:ADTVtvqxh", opts, NULL)) != -1) {
+	while ((ch = getopt_long(argc, argv, "u:p:s:i:m:f:d:r:P:ADTVtvqxh", opts, NULL)) != -1) {
 		switch (ch) {
 			case 'u':
 				arg_username = optarg;
@@ -73,6 +75,9 @@ parse_args(int argc, char *const argv[])
 				break;
 			case 'd':
 				arg_dev = optarg;
+				break;
+			case 'r':
+				arg_retry= optarg;
 				break;
 			case 'P':
 				pidfile = optarg;

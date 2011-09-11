@@ -10,7 +10,7 @@ usage(int status)
 	else {
 		fprintf(stderr, "Usage: %s [options]...\n", PACKAGE);
 		fputs(\
-"Operration modes:\n\
+"Operation modes:\n\
     -h, --help        display this help and exit\n\
     -v, --version     output version information and exit\n\
     -f FILE, --config=FILE\n\
@@ -29,6 +29,9 @@ usage(int status)
                       Use REGMAC to authorise\n\
     -d DEVICE,   --device=DEVICE\n\
                       Setup DEVICE as tunnel(works only on linux. oops...)\n\
+    -r COUNT,    --retry=COUNT\n\
+                      Re-connect COUNT times if failed to connect.\n\
+                      -1 means infinitely retry..\n\
     -P PIDFILE,  --pidfile=PIDFILE\n\
                       Create pid file PIDFILE (default /var/run/yixun.pid)\n\
     -D, --no-daemon   Does not become a daemon\n\
@@ -40,7 +43,7 @@ usage(int status)
                       configuration file, sanity of the keys. Then try \n\
                       to connect to auth-server, disconnect on success.\n\
                       This will not create any tunnels between host and\n\
-					  server\n\
+                      server\n\
     -A                Send all traffic over tunnel.\n\
 ", stdout);
 	}
