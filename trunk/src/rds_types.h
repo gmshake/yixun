@@ -79,12 +79,12 @@ enum rds_attr_type {	/* radius attribute type */
 
 enum error_info_type {
 	e_user = 100,		/* user not found */
-	e_pwd,			/* password wrong */
 	e_mac,			/* mac bind error */
+	e_pwd,			/* password wrong */
 	e_ip,			/* ip bind error */
-	e_busy,			/* server busy */
 	e_fee,			/* account need recharge */
-	e_tun,			/* error create gre tunnel */
+	e_tun,			/* can not create gre tunnel */
+	e_busy,			/* server busy */
 };
 
 struct str_err {
@@ -92,18 +92,20 @@ struct str_err {
 	enum error_info_type error;
 };
 
-/* if the info returned by server has any of these keywords, then stop trying to
- * reconnect to auth server
+/*
+ * if the info returned by server has any of these keywords, then 
+ * stop trying to re-connect to auth server
  *
  * NOT FULLY tested yet...
  */
 const struct str_err error_info[] = {
-	{"user not found", e_user},
-	{"password error", e_pwd},
+	{"User not found", e_user},
 	{"MAC bind error", e_mac},
-	{"IP bind error", e_ip},
-	{"系统繁忙", e_busy},
-	{"余额不足", e_fee},
+	{"Password Error", e_pwd},
+	{"IP address bind error", e_ip},
+	{"Insufficient", e_fee},
+/* 	{"Tunnel", e_tun}, 
+	{"系统繁忙", e_busy}, */
 	{NULL, 0}
 };
 

@@ -234,7 +234,6 @@ LOGOUT_KEEPALIVE:
 
 ERROR:
 	close(sockfd);
-	login_state = rval == 0 ? online : offline;
 	return rval;
 }
 
@@ -608,8 +607,10 @@ connect_tm(int socket, const struct sockaddr *addr, socklen_t addr_len, time_t t
 				FD_ZERO(&fd);
 				FD_SET(socket, &fd);
 				rval = select(socket + 1, NULL, &fd, NULL, &tv);
-				if (rval < 0 && errno != EINTR) {
-					dprintf("%s: Error connecting %d - %s\n", __FUNCTION__, errno, strerror(errno));
+				if (rval == 0) {
+					/* time limit expires */
+					dprintf("%s: Timeout in select() - Cancelling!\n", __FUNCTION__);
+					errno = ETIMEDOUT;
 					return -1;
 				} else if (rval > 0) {
 					/* Socket selected for write */
@@ -621,12 +622,13 @@ connect_tm(int socket, const struct sockaddr *addr, socklen_t addr_len, time_t t
 					/* Check the value returned... */
 					if (sock_err) {
 						dprintf("%s: Error in delayed connection() %d - %s\n", __FUNCTION__, sock_err, strerror(sock_err));
+						errno = sock_err;
 						return -1;
 					}
 					break;
-				} else {
-					dprintf("%s: Timeout in select() - Cancelling!\n", __FUNCTION__);
-					errno = ETIMEDOUT;
+				} else if (errno != EINTR) {
+					/* -1, an error occurred */
+					dprintf("%s: Error connecting %d - %s\n", __FUNCTION__, errno, strerror(errno));
 					return -1;
 				}
 			} while (1);
