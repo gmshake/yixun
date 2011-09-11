@@ -233,6 +233,7 @@ LOGOUT_KEEPALIVE:
 	}
 
 ERROR:
+	shutdown(sockfd, SHUT_RDWR);
 	close(sockfd);
 	return rval;
 }
