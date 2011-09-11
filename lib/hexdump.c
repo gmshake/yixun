@@ -32,7 +32,7 @@ hex2ascii(char outbuff[], size_t outlen, const void *inbuff, size_t inlen)
 			else
 				p += sprintf(p, " ");
 		}
-		p += sprintf(p, "%02x", (uint32_t) * ((uint8_t *) inbuff++));
+		p += sprintf(p, "%02hhx", *((uint8_t *)inbuff++));
 	}
 	return p - outbuff;
 }
