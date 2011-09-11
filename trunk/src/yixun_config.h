@@ -23,6 +23,7 @@ extern char authserver[CONF_LEN];
 extern char msgserver[CONF_LEN];
 
 extern unsigned int listenport;
+extern int retry_count;
 
 extern time_t conn_timeout;
 extern time_t snd_timeout;

@@ -30,6 +30,7 @@
 #include "log_xxx.h"
 #include "check_config.h"
 #include "common_macro.h"
+#include "yixun_config.h"
 
 #define LOCKFILE "/var/run/yixun.pid"
 
@@ -110,8 +111,6 @@ main(int argc, char *const argv[])
 		if (write_pid(lockfd) < 0)
 			return EXIT_FAILURE;
 	}
-	
-	connected = true;
 
 	/* Extended test done */
 	if (flag_etest) {
@@ -144,8 +143,8 @@ main(int argc, char *const argv[])
 static int
 start_login(void)
 {
-	int retry_count = 4;
-	do {
+	int trys = 3;
+	while (trys-- > 0) {
 		int rval = login();
 		if (rval == 0)
 			break;
@@ -153,13 +152,14 @@ start_login(void)
 			/* Username or password error, do not retry */
 			return -1;
 		sleep(1);
-	} while (retry_count-- > 0);
+	};
 
-	if (retry_count <= 0) {
+	if (trys == 0) {
 		log_err("Can not log in\n");
 		return -1;
 	}
 
+	connected = true;
 	return 0;
 }
 
@@ -213,7 +213,6 @@ handle_signals(int sig)
 
 			if (start_login() < 0)
 				exit(EXIT_FAILURE);
-			connected = true;
 
 			if (set_tunnel() < 0) {
 				log_perror("Can not set gre interface");
@@ -228,11 +227,24 @@ handle_signals(int sig)
 			break;
 		case SIGALRM:
 			if (keep_alive() < 0) {
+				connected = false;
 				/* unable to send keep alive to BRAS */
 				log_warning("Failed sending keep-alive packets.");
-				stop_listen();
-				connected = false;
-				exit(EXIT_SUCCESS);
+				while (retry_count != 0) {
+					if (start_login() == 0)
+						break;
+					if (retry_count > 0)
+						--retry_count;
+				}
+				if (retry_count == 0) {
+					stop_listen();
+					exit(EXIT_SUCCESS);
+				}
+
+				if (reset_tunnel() < 0) {
+					log_perror("Can not set gre interface");
+					exit(EXIT_FAILURE);
+				}
 			}
 			alarm(gre_timeout);
 			break;

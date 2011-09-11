@@ -141,4 +141,66 @@ remove_tunnel(void)
 	return 0;
 }
 
+int
+reset_tunnel(void)
+{
+	if (! flag_tunnel_isset)
+		return -1;
+
+	char newtunnel[IFNAMSIZ];
+	if (gre_find_tunnel_with_addr(newtunnel, \
+				gre_src, \
+				gre_dst, \
+				gre_local, \
+				gre_remote) == 0) {
+		fprintf(stderr, "tunnel already exists: %s\n", newtunnel);
+		return 0;
+	}
+
+	if (gre_set_tunnel(tunnel, gre_src, gre_dst) < 0) {
+		fprintf(stderr, "error set tunnel address of %s\n", tunnel);
+		return -1;
+	}
+
+#if defined(__linux__)
+	/* set link dev as well?? ie: ip_tunnel_parm.link */
+
+	/* bring gre tunnel up */
+	if (gre_set_link(tunnel, 1) < 0) {
+		fprintf(stderr, "error bring %s up\n", tunnel);
+		return -1;
+	}
+#else
+	if (gre_set_addr(tunnel, gre_local, gre_remote, gre_netmask) < 0) {
+		fprintf(stderr, "error set address of %s\n", tunnel);
+		return -1;
+	}
+#endif
+
+	flag_tunnel_isset = true;
+
+	/*
+	 * hack: if tunnel remote is the same as tunnel interface dst, as we have no 
+	 * opportunity to access route directly(Apple has not addressed it to the developer)
+	 * , we delete the loopback route. 
+	 */
+	if (gre_remote == gre_dst) {
+		in_addr_t tmp_dst = gre_remote;
+		in_addr_t tmp_mask = 0xffffffff;
+		if (route_get(&tmp_dst, &tmp_mask, NULL, NULL) == 0 && \
+				tmp_dst == gre_remote && \
+				tmp_mask == 0xffffffff)
+			route_delete(gre_remote, 0xffffffff);
+	}
+
+	if (flag_changeroute) {
+		route_change(0, 0, gre_remote, tunnel);
+		/*
+		   route_delete(0, 0);
+		   route_add(0, 0, remote, ifname);
+		   */
+	}
+
+	return 0;
+}
 

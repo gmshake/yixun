@@ -20,6 +20,7 @@ char authserver[CONF_LEN];
 char msgserver[CONF_LEN];
 
 unsigned int listenport;
+int retry_count;
 
 time_t conn_timeout;
 time_t snd_timeout;

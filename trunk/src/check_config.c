@@ -65,6 +65,7 @@ static struct key keys[] = {
 	{"auth-server",		authserver,		st},
 	{"msg-server",		msgserver,		st},
 	{"listen-port",		&listenport,	ui},
+	{"retry",			&retry_count,	in},
 	{"conn-timeout",	&conn_timeout,	in},
 	{"snd-timeout",		&snd_timeout,	in},
 	{"rcv-timeout",		&rcv_timeout,	in},
@@ -454,6 +455,8 @@ load_cmd_conf(void)
 		strlcpy(regip, arg_regip, sizeof(regip));
 	if (arg_hwaddr)
 		strlcpy(hwaddr, arg_hwaddr, sizeof(hwaddr));
+	if (arg_retry)
+		sscanf(arg_retry, "%d", &retry_count);
 }
 
 static int
@@ -588,5 +591,6 @@ print_config(void)
 	printf("connect timeout:  %ld\n", (long)conn_timeout);
 	printf("send timeout:     %ld\n", (long)snd_timeout);
 	printf("receive timeout:  %ld\n", (long)rcv_timeout);
+	printf("retry count:      %d\n", retry_count);
 }
 
