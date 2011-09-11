@@ -116,22 +116,23 @@ wait_msg(void)
 	}
 
 	BUFF_ALIGNED(r_buff, R_BUF_LEN);
-	struct sockaddr_in r_client;
-	socklen_t len = sizeof(r_client);
-	int sock_client = accept(sock_listen, (struct sockaddr *)&r_client, &len);
+	struct sockaddr_in addr;
+	socklen_t len = sizeof(addr);
+	int sock_client = accept(sock_listen, (struct sockaddr *)&addr, &len);
 	if (sock_client < 0) {
 		log_perror("%s: accept()", __FUNCTION__);
 		return -1;
 	}
 
-	if (msg_server != 0 && msg_server != r_client.sin_addr.s_addr) {
-		log_notice("%s: %s attempt to connect\n", \
-				__FUNCTION__, inet_ntoa(r_client.sin_addr));
+	if (msg_server != 0 && msg_server != addr.sin_addr.s_addr) {
+		log_notice("%s: Unwanted connection from %s:%hu\n", \
+				__FUNCTION__, inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
+		shutdown(sock_client, SHUT_RDWR);
 		close(sock_client);
 		return 0;
 	}
 
-	log_info("%s: accept: %s\n", __FUNCTION__, inet_ntoa(r_client.sin_addr));
+	log_info("%s: Connection from %s:%hu\n", __FUNCTION__, inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
 
 	tv.tv_sec = rcv_timeout;
 	tv.tv_usec = 0;
@@ -146,14 +147,17 @@ wait_msg(void)
 				log_perror("%s: recv()", __FUNCTION__);
 			break;
 		case 0:
-			log_perror("%s: recv(): Client %s has closed its half side of the connection\n",	__FUNCTION__, inet_ntoa(r_client.sin_addr));
+			log_perror("%s: recv(): Client %s has closed its half side of the connection\n",	__FUNCTION__, inet_ntoa(addr.sin_addr));
 			break;
 		default:
-			if (act_on_info(r_buff, 0) < 0)
+			if (act_on_info(r_buff, 0) < 0) {
+				shutdown(sock_client, SHUT_RD);
 				close(sock_client);
+			}
 			return 0;
 	}
 
+	shutdown(sock_client, SHUT_RDWR);
 	close(sock_client);
 	return -1;
 }
