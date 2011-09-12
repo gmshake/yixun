@@ -144,17 +144,20 @@ static int
 start_login(void)
 {
 	int trys = 3;
-	while (trys-- > 0) {
+	do {
 		int rval = login();
 		if (rval == 0)
 			break;
 		else if (rval > 0)
-			/* Username or password error, do not retry */
+			/* 
+			 * Username, password, mac bind or ip addr bind error
+			 * do not retry
+			 */
 			return -1;
 		sleep(1);
-	};
+	} while (--trys > 0);
 
-	if (trys == 0) {
+	if (trys <= 0) {
 		log_err("Can not log in\n");
 		return -1;
 	}
