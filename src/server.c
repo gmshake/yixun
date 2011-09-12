@@ -91,6 +91,7 @@ int
 wait_msg(void)
 {
 	static int select_timeout = 1;
+	int rval = -1;
 	fd_set rfds;
 	struct timeval tv;
 
@@ -106,20 +107,21 @@ wait_msg(void)
 			return 0;
 		case 0:
 			if (select_timeout < 16)
-				select_timeout <<= 1;
+				select_timeout++;
 			return 0;
 		default:
 			if (! FD_ISSET(sock_listen, &rfds))
 				return 0;
-			select_timeout = 1;
+			if (select_timeout > 1)
+				select_timeout >>= 1;
 			break;
 	}
 
 	BUFF_ALIGNED(r_buff, R_BUF_LEN);
 	struct sockaddr_in addr;
 	socklen_t len = sizeof(addr);
-	int sock_client = accept(sock_listen, (struct sockaddr *)&addr, &len);
-	if (sock_client < 0) {
+	int client = accept(sock_listen, (struct sockaddr *)&addr, &len);
+	if (client < 0) {
 		log_perror("%s: accept()", __FUNCTION__);
 		return -1;
 	}
@@ -127,19 +129,18 @@ wait_msg(void)
 	if (msg_server != 0 && msg_server != addr.sin_addr.s_addr) {
 		log_notice("%s: Unwanted connection from %s:%hu\n", \
 				__FUNCTION__, inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
-		shutdown(sock_client, SHUT_RDWR);
-		close(sock_client);
-		return 0;
+		rval = 0;
+		goto DONE;
 	}
 
 	log_info("%s: Connection from %s:%hu\n", __FUNCTION__, inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
 
 	tv.tv_sec = rcv_timeout;
 	tv.tv_usec = 0;
-	if (setsockopt(sock_client, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
+	if (setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
 		log_perror("%s: setsockopt(SO_RCVTIMEO)", __FUNCTION__);
 
-	switch (recv(sock_client, r_buff, R_BUF_LEN, 0)) {
+	switch (recv(client, r_buff, R_BUF_LEN, 0)) {
 		case -1:
 			if (errno == EAGAIN)
 				log_err("%s: recv(): time out\n", __FUNCTION__);
@@ -150,16 +151,14 @@ wait_msg(void)
 			log_perror("%s: recv(): Client %s has closed its half side of the connection\n",	__FUNCTION__, inet_ntoa(addr.sin_addr));
 			break;
 		default:
-			if (act_on_info(r_buff, 0) < 0) {
-				shutdown(sock_client, SHUT_RD);
-				close(sock_client);
-			}
-			return 0;
+			act_on_info(r_buff, 0);
+			rval = 0;
 	}
 
-	shutdown(sock_client, SHUT_RDWR);
-	close(sock_client);
-	return -1;
+DONE:
+	shutdown(client, SHUT_RDWR);
+	close(client);
+	return rval;
 }
 
 
