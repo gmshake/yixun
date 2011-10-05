@@ -13,7 +13,8 @@ yixun_SOURCES = main.c \
 				yixun_config.c yixun_config.h \
 				usage.c \
 				version.c \
-				rds_types.h
+				rds_types.h \
+				defconfig.h
 
 yixun_LDADD = $(top_srcdir)/lib/libyixun.a
 
