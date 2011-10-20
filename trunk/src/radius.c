@@ -456,7 +456,12 @@ get_parameters(const void *buff)
 #endif
 				break;
 			case s_mask:
-				gre_netmask = *((in_addr_t *) p->content);
+				/* netmask is ignored, always set to 255.255.255.255 */
+				/* gre_netmask = *((in_addr_t *) p->content); */
+#ifdef DEBUG
+				log_warning("%s: line:%d netmask %s from server is ignored\n", __FUNCTION__, __LINE__, inet_itoa(*((in_addr_t *)p->content)));
+#endif
+				gre_netmask = -1;
 				break;
 			case s_pad:
 				break;
