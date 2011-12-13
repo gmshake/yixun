@@ -139,7 +139,6 @@ main(int argc, char *const argv[])
 	return EXIT_SUCCESS;
 }
 
-
 static int
 start_login(void)
 {
@@ -230,6 +229,7 @@ handle_signals(int sig)
 			break;
 		case SIGALRM:
 			if (keep_alive() < 0) {
+				remove_tunnel();
 				connected = false;
 				/* unable to send keep alive to BRAS */
 				log_warning("Failed sending keep-alive packets.");
@@ -244,7 +244,7 @@ handle_signals(int sig)
 					exit(EXIT_SUCCESS);
 				}
 
-				if (reset_tunnel() < 0) {
+				if (set_tunnel() < 0) {
 					log_perror("Can not set gre interface");
 					exit(EXIT_FAILURE);
 				}
