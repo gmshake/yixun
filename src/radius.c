@@ -458,9 +458,6 @@ get_parameters(const void *buff)
 			case s_mask:
 				/* netmask is ignored, always set to 255.255.255.255 */
 				/* gre_netmask = *((in_addr_t *) p->content); */
-#ifdef DEBUG
-				log_warning("%s: line:%d netmask %s from server is ignored\n", __FUNCTION__, __LINE__, inet_itoa(*((in_addr_t *)p->content)));
-#endif
 				gre_netmask = -1;
 				break;
 			case s_pad:
@@ -497,7 +494,9 @@ get_parameters(const void *buff)
 #endif
 				break;
 		}
-		buff += p->length;
+		unsigned short len;
+		memcpy(&len, &p->length, sizeof(len));
+		buff += len;
 	}
 	return 0;
 }
@@ -561,7 +560,6 @@ add_attr(void *buff, enum rds_attr_type type, uint8_t length, uint8_t content_le
 	s->flag = CLINET_ATTR_FLAG;
 	s->type = type;
 	s->length = length + sizeof(struct rds_attr);
-	s->pad = 0;
 
 	if (content_len > length)
 		content_len = length;

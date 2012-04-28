@@ -32,9 +32,8 @@ struct rds_attr {
 #define CLINET_ATTR_FLAG 0x14
 #define SERVER_ATTR_FLAG 0x15
 	uint8_t type;		/* attribute type */
-	uint8_t length;		/* attribute total length */
-#define ATTR_MAX_LEN 0xff
-	uint8_t pad;		/* to be zeroed */
+	uint16_t length;		/* attribute total length */
+#define ATTR_MAX_LEN 0x400
 	char content[0];
 } __attribute__ ((__packed__));
 
