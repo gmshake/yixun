@@ -49,20 +49,28 @@ log_log(const char *fmt, ...)
 {
 	int cnt = 1;
 	va_list ap;
+	va_list ap2;
+#if USE_PTHREAD
+	va_list ap3;
+#endif
 	va_start(ap, fmt);
+	va_copy(ap2, ap);
+#if USE_PTHREAD
+	va_copy(ap3, ap);
+#endif
 
 	int i = 1;
-	while (i <= LBUFF) {
+	while (i != LMAX) {
 		switch (log_type & i) {
 			case LCONSOLE:
 				cnt = vfprintf(stdout, fmt, ap);
 				break;
 			case LDAEMON:
-				vsyslog(LOG_NOTICE, fmt, ap);
+				vsyslog(LOG_NOTICE, fmt, ap2);
 				break;
 #if USE_PTHREAD
 			case LBUFF:
-				cnt = vlogf(fmt, ap);
+				cnt = vlogf(fmt, ap3);
 				break;
 #endif
 			default:
@@ -72,6 +80,10 @@ log_log(const char *fmt, ...)
 	}
 
 	va_end(ap);
+	va_end(ap2);
+#if USE_PTHREAD
+	va_end(ap3);
+#endif
 	return cnt;
 }
 
@@ -92,7 +104,7 @@ log_perror(const char *fmt, ...)
 	va_end(ap);
 
 	int i = 1;
-	while (i <= LBUFF) {
+	while (i != LMAX) {
 		switch (log_type & i) {
 			case LCONSOLE:
 				cnt = fprintf(stdout, "%s\n", buff);
@@ -119,23 +131,29 @@ static int
 vlog_xxx(const char *prepend, int log_level, const char *fmt, va_list ap)
 {
 	int cnt;
+	va_list ap2;
+	va_copy(ap2, ap);
+#if USE_PTHREAD
+	va_list ap3;
+	va_copy(ap3, ap);
+#endif
 	char newfmt[INFO_BUF_LEN];
 	cnt = my_strcpy(newfmt, prepend, sizeof(newfmt));
 	if (cnt < sizeof(newfmt))
 		cnt += my_strcpy(newfmt + cnt, fmt, sizeof(newfmt) - cnt);
 
 	int i = 1;
-	while (i <= LBUFF) {
+	while (i != LMAX) {
 		switch (log_type & i) {
 			case LCONSOLE:
 				cnt = vfprintf(stdout, newfmt, ap);
 				break;
 			case LDAEMON:
-				vsyslog(log_level, newfmt, ap);
+				vsyslog(log_level, newfmt, ap2);
 				break;
 #if USE_PTHREAD
 			case LBUFF:
-				cnt = vlogf(newfmt, ap);
+				cnt = vlogf(newfmt, ap3);
 				break;
 #endif
 			default:
@@ -144,6 +162,10 @@ vlog_xxx(const char *prepend, int log_level, const char *fmt, va_list ap)
 		i <<= 1;
 	}
 
+	va_end(ap2);
+#if USE_PTHREAD
+	va_end(ap3);
+#endif
 	return cnt;
 }
 
@@ -224,7 +246,7 @@ log_hex(const void *data, size_t len)
 	int rval = hex2ascii(buff, bufflen, data, len);
 
 	int i = 1;
-	while (i < LBUFF) {
+	while (i != LMAX) {
 		switch (log_type & i) {
 			case LCONSOLE:
 				fprintf(stderr, "%s\n", buff);

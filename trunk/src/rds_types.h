@@ -24,7 +24,6 @@ struct rds_packet_header {
 	uint32_t pad;		/* to be zeroed */
 	char extra[0];
 };
-#pragma pack()
 
 /* radius attribute */
 struct rds_attr {
@@ -32,10 +31,11 @@ struct rds_attr {
 #define CLINET_ATTR_FLAG 0x14
 #define SERVER_ATTR_FLAG 0x15
 	uint8_t type;		/* attribute type */
-	uint16_t length;		/* attribute total length */
+	uint16_t length;		/* attribute total length, hack: little endian */
 #define ATTR_MAX_LEN 0x400
 	char content[0];
-} __attribute__ ((__packed__));
+};
+#pragma pack()
 
 /* radius packet type */
 enum rds_type {

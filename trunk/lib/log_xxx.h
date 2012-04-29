@@ -22,6 +22,9 @@
 #ifndef LBUFF
 #define LBUFF 0x04
 #endif
+#ifndef LMAX
+#define LMAX 0x08
+#endif
 
 #ifdef YIXUN_MULTI_THREAD
 #define USE_PTHREAD 1

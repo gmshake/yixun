@@ -74,7 +74,7 @@ uint32_t gre_upload_band;
 uint32_t gre_download_band;
 
 static size_t s_buff_len;
-static char s_buff[S_BUF_LEN];
+static BUFF_ALIGNED(s_buff, S_BUF_LEN);
 static char server_info[ATTR_MAX_LEN + (ATTR_MAX_LEN >> 1)];
 
 void print_server_config(void);
@@ -92,7 +92,7 @@ static int get_parameters(const void *buff);
 static struct rds_packet_header *make_rds_packet(void *buff, enum rds_type type);
 
 /* 为发送包添加相应属性字段 */
-static void add_attr(void *buff, enum rds_attr_type type, uint8_t length, uint8_t content_len, const void *content);
+static void add_attr(void *buff, enum rds_attr_type type, uint16_t length, uint16_t content_len, const void *content);
 
 /* 带连接超时的connect */
 static int connect_tm(int socket, const struct sockaddr *addr, socklen_t addr_len, time_t timeout);
@@ -100,6 +100,9 @@ static int connect_tm(int socket, const struct sockaddr *addr, socklen_t addr_le
 static ssize_t send_tm(int socket, const void *buffer, size_t length, time_t timeout, int flags);
 
 static ssize_t recv_tm(int socket, void *buffer, size_t length, time_t timeout, int flags);
+
+static uint16_t htols(uint16_t);
+static uint16_t ltohs(uint16_t);
 
 /*
  * yixun_log_op(), make && send proper packet indicated by op
@@ -203,6 +206,7 @@ LOGOUT_KEEPALIVE:
 #endif
 
 			ssize_t ret = recv_tm(sockfd, r_buff, R_BUF_LEN, rcv_timeout, 0);
+
 			if (ret <= 0) {
 				if (ret == 0) {
 					log_err("[%s] receive: Auth server %s has closed its half side of the connection\n", __FUNCTION__, inet_ntoa(auth_server.sin_addr));
@@ -329,13 +333,13 @@ act_on_info(void *buff, int sockfd)
 {
 	/*
 	 * hack: due to problem caused by memory alignment, we sugguest that buff
-	 * is aligned to 4 bytes, then we will not encounter the annoying
+	 * is aligned to 8 bytes, then we will not encounter the annoying
 	 * bus-error problem on MIPS/ARM/PowerPC/SPARC, or the worse performence
 	 * on X86-64
 	 */
 #ifdef DEBUG
-	if ((size_t) buff % sizeof(int) != 0)
-		log_warning("[%s] buffer(%p) is not aligned to %d bytes\n", __FUNCTION__, buff, sizeof(int));
+	if ((size_t) buff % sizeof(int64_t) != 0)
+		log_warning("[%s] buffer(%p) is not aligned to %d bytes\n", __FUNCTION__, buff, sizeof(int64_t));
 #endif
 	struct rds_packet_header *hd = (struct rds_packet_header *)buff;
 	if (hd->vendor != VENDOR_YIXUN) {
@@ -403,13 +407,13 @@ get_parameters(const void *buff)
 {
 	/*
 	 * hack: due to problem caused by memory alignment, we sugguest that buff
-	 * is aligned to 4 bytes, then we will not encounter the annoying
+	 * is aligned to 8 bytes, then we will not encounter the annoying
 	 * bus-error problem on MIPS/ARM/PowerPC/SPARC, or the worse performence
 	 * on X86-64
 	 */
 #ifdef DEBUG
-	if ((size_t) buff % sizeof(int) != 0)
-		log_warning("[%s] buffer(%p) is not aligned to %d bytes\n", __FUNCTION__, buff, sizeof(int));
+	if ((size_t) buff % sizeof(int64_t) != 0)
+		log_warning("[%s] buffer(%p) is not aligned to %d bytes\n", __FUNCTION__, buff, sizeof(int64_t));
 #endif
 	struct rds_packet_header *hd = (struct rds_packet_header *)buff;
 	buff = hd->extra;	/* first attribute */
@@ -426,11 +430,15 @@ get_parameters(const void *buff)
 			return -1;
 		}
 #ifdef DEBUG
-		if ((p->type == s_gre_d ||
-		     p->type == s_gre_l ||
-		     p->type == s_gre_r ||
-		     p->type == s_timeout || p->type == s_mask || p->type == s_upband || p->type == s_downband) && (size_t) & p->content % sizeof(int) != 0)
-			log_warning("%s: line:%d buffer(%p) is not aligned to %d bytes\n", __FUNCTION__, __LINE__, &p->content, sizeof(int));
+		if ((p->type == s_gre_d || \
+		     p->type == s_gre_l || \
+		     p->type == s_gre_r || \
+		     p->type == s_timeout || \
+		     p->type == s_mask || \
+		     p->type == s_upband || \
+		     p->type == s_downband) && (size_t)(&p->content) % sizeof(int32_t) != 0)
+			log_warning("%s: line:%d buffer(%p) is not aligned to %d bytes\n", \
+					__FUNCTION__, __LINE__, &p->content, sizeof(int32_t));
 #endif
 		switch (p->type) {
 			case s_gre_d:
@@ -471,8 +479,8 @@ get_parameters(const void *buff)
 			case s_sinfo:
 			{
 				bzero(server_info, sizeof(server_info));
-				size_t len = p->length - sizeof(struct rds_attr) < sizeof(server_info) ?
-				    p->length - sizeof(struct rds_attr) - 2 : sizeof(server_info) - 2;
+				size_t len = ltohs(p->length) - sizeof(struct rds_attr) < sizeof(server_info) ?
+				    ltohs(p->length) - sizeof(struct rds_attr) - 2 : sizeof(server_info) - 2;
 
 				convert_code("GB18030", "UTF-8",
 							p->content, strlen(p->content),
@@ -494,9 +502,9 @@ get_parameters(const void *buff)
 #endif
 				break;
 		}
-		unsigned short len;
+		uint16_t len;
 		memcpy(&len, &p->length, sizeof(len));
-		buff += len;
+		buff += ltohs(len);
 	}
 	return 0;
 }
@@ -514,13 +522,13 @@ make_rds_packet(void *buff, enum rds_type type)
 {
 	/*
 	 * hack: due to problem caused by memory alignment, we sugguest that buff
-	 * is aligned to 4 bytes, then we will not encounter the annoying
+	 * is aligned to 8 bytes, then we will not encounter the annoying
 	 * bus-error problem on MIPS/ARM/PowerPC/SPARC, or the worse performence
 	 * on X86-64
 	 */
 #ifdef DEBUG
-	if ((size_t) buff % sizeof(int) != 0)
-		log_warning("[%s] buffer(%p) is not aligned to %d bytes\n", __FUNCTION__, buff, sizeof(int));
+	if ((size_t) buff % sizeof(int64_t) != 0)
+		log_warning("[%s] buffer(%p) is not aligned to %d bytes\n", __FUNCTION__, buff, sizeof(int64_t));
 #endif
 	struct rds_packet_header *p = (struct rds_packet_header *)buff;
 	p->vendor = VENDOR_YIXUN;
@@ -529,7 +537,27 @@ make_rds_packet(void *buff, enum rds_type type)
 	return p;
 }
 
+/*
+ * htols(), convert 16bit number from host order to little endian
+ * @param num, input value
+ */
+static uint16_t
+htols(uint16_t num)
+{
+	num = htons(num);
+	return (num >> 8) | (num << 8);
+}
 
+/*
+ * ltohs(), convert 16bit number from little endian to host order
+ * @param num, input value
+ */
+static uint16_t
+ltohs(uint16_t num)
+{
+	num = (num >> 8) | (num << 8);
+	return ntohs(num);
+}
 /*
  * add_attr(), add extra data to rds_packet
  * @param packet, packet buffer
@@ -539,17 +567,17 @@ make_rds_packet(void *buff, enum rds_type type)
  * @param content, data to be copied, NULL indicates skip length packet, ie, leave length packet unchanged
  */
 static void
-add_attr(void *buff, enum rds_attr_type type, uint8_t length, uint8_t content_len, const void *content)
+add_attr(void *buff, enum rds_attr_type type, uint16_t length, uint16_t content_len, const void *content)
 {
 	/*
 	 * hack: due to problem caused by memory alignment, we sugguest that buff
-	 * is aligned to 4 bytes, then we will not encounter the annoying
+	 * is aligned to 8 bytes, then we will not encounter the annoying
 	 * bus-error problem on MIPS/ARM/PowerPC/SPARC, or the worse performence
 	 * on X86-64
 	 */
 #ifdef DEBUG
-	if ((size_t) buff % sizeof(int) != 0)
-		log_warning("[%s] buffer(%p) is not aligned to %d bytes\n", __FUNCTION__, buff, sizeof(int));
+	if ((size_t) buff % sizeof(int64_t) != 0)
+		log_warning("[%s] buffer(%p) is not aligned to %d bytes\n", __FUNCTION__, buff, sizeof(int64_t));
 #endif
 	struct rds_packet_header *p = (struct rds_packet_header *)buff;
 	struct rds_attr *s = (struct rds_attr *)(p->extra + ntohs(p->length));
@@ -559,7 +587,7 @@ add_attr(void *buff, enum rds_attr_type type, uint8_t length, uint8_t content_le
 
 	s->flag = CLINET_ATTR_FLAG;
 	s->type = type;
-	s->length = length + sizeof(struct rds_attr);
+	s->length = htols(length + sizeof(struct rds_attr)); // hack: little endian, should fixed at server side
 
 	if (content_len > length)
 		content_len = length;
@@ -568,7 +596,7 @@ add_attr(void *buff, enum rds_attr_type type, uint8_t length, uint8_t content_le
 		memcpy(s->content, content, content_len);
 
 	/* 包的长度按网络序存储 */
-	p->length = htons(ntohs(p->length) + s->length);
+	p->length = htons(ntohs(p->length) + ltohs(s->length));
 }
 
 
