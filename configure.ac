@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.61)
-AC_INIT(yixun, 1.2, gmshake@gmail.com)
+AC_INIT(yixun, 1.4, gmshake@gmail.com)
 AC_CONFIG_SRCDIR([src/main.c])
 AC_CONFIG_HEADER([config.h])
 AM_INIT_AUTOMAKE

@@ -14,9 +14,9 @@
 #define inet_itoa(x) inet_ntoa(*(struct in_addr*)&(x))
 #endif
 
-/* make buff that is aligned to 4 bytes */
+/* make buff that is aligned to 16 bytes */
 #ifndef BUFF_ALIGNED
-#define BUFF_ALIGNED(name, size) char name[(size)]__attribute__((aligned(sizeof(uint32_t))))
+#define BUFF_ALIGNED(name, size) char name[(size)]__attribute__((aligned(4 * sizeof(uint32_t))))
 #endif
 
 #ifdef DEBUG
